@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { cacheMiddleware } = require('../middleware/cache');
+const { getLiveStreamSources } = require('../controllers/stream.controller');
 
 const router = express.Router();
 const JIKAN_BASE_URL = 'https://api.jikan.moe/v4';
@@ -179,47 +180,14 @@ router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
 
 /**
  * @route   GET /api/provider/stream/:episodeId
- * @desc    Fetch HLS (.m3u8) streaming sources for an episode
+ * @desc    Fetch dynamic HLS (.m3u8) streaming sources via provider cascade:
+ *          Consumet/Gogoanime → Consumet/Zoro → AnimeKai → static HLS fallback
+ *          NOTE: Streams are NOT cached (5-min CDN tokens expire quickly).
  */
-router.get('/stream/:episodeId', cacheMiddleware(300), async (req, res) => {
-  try {
-    const { episodeId } = req.params;
-
-    // Production HLS test sources with adaptive bitrate .m3u8 playlists
-    const streamData = {
-      episodeId,
-      headers: {
-        Referer: 'https://animekai.to'
-      },
-      sources: [
-        {
-          url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-          quality: 'Auto HLS (Adaptive HD)',
-          isHLS: true
-        },
-        {
-          url: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
-          quality: '1080p Ultra HD',
-          isHLS: true
-        },
-        {
-          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-          quality: '720p MP4 Fallback',
-          isHLS: false
-        }
-      ],
-      servers: [
-        { name: 'Vidstreaming (HLS Fast)', id: 'vidstreaming' },
-        { name: 'Streamtape (HD)', id: 'streamtape' },
-        { name: 'AnimeKai Primary', id: 'kai-primary' }
-      ]
-    };
-
-    return res.status(200).json(streamData);
-  } catch (error) {
-    console.error(`Stream API error: ${error.message}`);
-    return res.status(500).json({ message: 'Error fetching streaming links' });
-  }
+router.get('/stream/:episodeId', (req, res) => {
+  // Re-map param name so controller receives req.params.id
+  req.params.id = req.params.episodeId;
+  return getLiveStreamSources(req, res);
 });
 
 module.exports = router;

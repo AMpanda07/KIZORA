@@ -7,7 +7,6 @@ const streamRoutes = require('./routes/stream.routes');
 const animeRoutes = require('./routes/anime.routes');
 const providerRoutes = require('./routes/provider.routes');
 const { initCatalogCron } = require('./jobs/updateCatalog');
-const { getLiveStreamSources } = require('./controllers/stream.controller');
 
 // Load environment variables
 dotenv.config();
@@ -33,10 +32,9 @@ app.use(cors({
 app.use(express.json());
 
 // Routes Registration
-app.use('/api/stream', streamRoutes);
-app.get('/api/stream/:episodeId', getLiveStreamSources);
-app.use('/api/anime', animeRoutes);
-app.use('/api/provider', providerRoutes);
+app.use('/api/stream',    streamRoutes);    // /api/stream/video/:episodeId (range-based local files)
+app.use('/api/anime',     animeRoutes);     // /api/anime (MongoDB catalog)
+app.use('/api/provider',  providerRoutes);  // /api/provider/* (Jikan + stream resolver)
 
 // Health-check route
 app.get('/', (req, res) => {
