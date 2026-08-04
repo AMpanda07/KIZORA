@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
 const connectDB = require('./config/db');
+const streamRoutes = require('./routes/stream.routes');
 
 // Load environment variables
 dotenv.config();
@@ -16,6 +17,9 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use('/api/stream', streamRoutes);
 
 // Health-check route
 app.get('/', (req, res) => {
