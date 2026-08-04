@@ -98,8 +98,8 @@ const Watch = () => {
     : FALLBACK_STREAM;
 
   return (
-    <div className="min-h-screen text-white pt-24 pb-20" style={{ background: '#0B0C10' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="min-h-screen text-white pb-20" style={{ background: '#0F0A1E', paddingLeft: '220px', paddingTop: '73px' }}>
+      <div className="max-w-6xl mx-auto px-6 py-6">
 
         {/* ── TOP BAR ──────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-4 mb-6">
