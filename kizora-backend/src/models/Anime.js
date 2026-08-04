@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 
 const animeSchema = new mongoose.Schema(
   {
+    malId: {
+      type: Number,
+      index: true
+    },
     title: {
       type: String,
       required: [true, 'Anime title is required'],
