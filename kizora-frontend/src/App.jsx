@@ -7,11 +7,13 @@ import Watch from './pages/Watch';
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[#09090b] text-zinc-100 relative">
+      <div className="min-h-screen bg-[#0B0C10] text-zinc-100 relative">
         <Navbar />
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/directory" element={<Home />} />
           <Route path="/watch/:episodeId" element={<Watch />} />
+          <Route path="*" element={<Home />} />
         </Routes>
       </div>
     </BrowserRouter>
