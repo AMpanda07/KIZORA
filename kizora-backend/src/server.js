@@ -6,12 +6,17 @@ const connectDB = require('./config/db');
 const streamRoutes = require('./routes/stream.routes');
 const animeRoutes = require('./routes/anime.routes');
 const providerRoutes = require('./routes/provider.routes');
+const { initCatalogCron } = require('./jobs/updateCatalog');
+const { getLiveStreamSources } = require('./controllers/stream.controller');
 
 // Load environment variables
 dotenv.config();
 
 // Connect to Database
 connectDB();
+
+// Initialize Automated Catalog Sync Cron Job
+initCatalogCron();
 
 const app = express();
 
@@ -29,6 +34,7 @@ app.use(express.json());
 
 // Routes Registration
 app.use('/api/stream', streamRoutes);
+app.get('/api/stream/:episodeId', getLiveStreamSources);
 app.use('/api/anime', animeRoutes);
 app.use('/api/provider', providerRoutes);
 
@@ -36,7 +42,7 @@ app.use('/api/provider', providerRoutes);
 app.get('/', (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'KIZORA Production Aggregator API is running'
+    message: 'KIZORA Automated Pipeline & HLS Aggregator API is running'
   });
 });
 
