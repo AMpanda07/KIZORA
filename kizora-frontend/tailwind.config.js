@@ -7,6 +7,10 @@ export default {
   theme: {
     extend: {
       colors: {
+        'deep-space': '#0B0C10',
+        'neon-purple': '#8B5CF6',
+        'neon-blue': '#6366F1',
+        'neon-cyan': '#22D3EE',
         space: {
           bg: '#0B0C10',
           card: 'rgba(255, 255, 255, 0.05)',
@@ -18,6 +22,7 @@ export default {
         }
       },
       boxShadow: {
+        'neon-glow': '0 0 25px -5px rgba(139, 92, 246, 0.7), 0 0 50px -10px rgba(99, 102, 241, 0.4)',
         'glow-indigo': '0 0 20px -5px rgba(99, 102, 241, 0.5)',
         'glow-violet': '0 0 25px -5px rgba(139, 92, 246, 0.6)',
         'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)'

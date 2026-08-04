@@ -4,8 +4,20 @@ const Episode = require('../models/Episode');
 
 const JIKAN_BASE_URL = 'https://api.jikan.moe/v4';
 
+// ─── Static fallback catalog (used when Jikan & MongoDB are both unavailable) ──
+const STATIC_CATALOG_FALLBACK = [
+  { _id: '21', malId: 21, title: 'One Piece', synopsis: 'Monkey D. Luffy sets off on an adventure with his pirate crew to find the greatest treasure in the world.', coverImage: 'https://cdn.myanimelist.net/images/anime/6/73245l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/6/73245l.jpg', genres: ['Action', 'Adventure', 'Comedy'], totalEpisodes: 1122, status: 'Ongoing', releaseYear: 1999, score: 8.7 },
+  { _id: '16498', malId: 16498, title: 'Attack on Titan', synopsis: 'A young boy becomes a soldier to fight the giant humanoid Titans threatening humanity.', coverImage: 'https://cdn.myanimelist.net/images/anime/10/47347l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/10/47347l.jpg', genres: ['Action', 'Drama', 'Fantasy'], totalEpisodes: 87, status: 'Completed', releaseYear: 2013, score: 9.0 },
+  { _id: '5114', malId: 5114, title: 'Fullmetal Alchemist: Brotherhood', synopsis: 'Two brothers search for a Philosopher\'s Stone after a failed attempt to revive their deceased mother.', coverImage: 'https://cdn.myanimelist.net/images/anime/1223/96541l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/1223/96541l.jpg', genres: ['Action', 'Adventure', 'Drama'], totalEpisodes: 64, status: 'Completed', releaseYear: 2009, score: 9.1 },
+  { _id: '1535', malId: 1535, title: 'Death Note', synopsis: 'A student who discovers a supernatural notebook uses it to cleanse the world of criminals.', coverImage: 'https://cdn.myanimelist.net/images/anime/9/9453l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/9/9453l.jpg', genres: ['Mystery', 'Supernatural', 'Thriller'], totalEpisodes: 37, status: 'Completed', releaseYear: 2006, score: 8.6 },
+  { _id: '11061', malId: 11061, title: 'Hunter x Hunter (2011)', synopsis: 'Gon Freecss aspires to become a Hunter capable of greatness and seeks out his missing father.', coverImage: 'https://cdn.myanimelist.net/images/anime/11/33657l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/11/33657l.jpg', genres: ['Action', 'Adventure', 'Fantasy'], totalEpisodes: 148, status: 'Completed', releaseYear: 2011, score: 9.0 },
+  { _id: '38000', malId: 38000, title: 'Demon Slayer', synopsis: 'A young boy becomes a demon slayer to cure his sister who was turned into a demon.', coverImage: 'https://cdn.myanimelist.net/images/anime/1286/99889l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/1286/99889l.jpg', genres: ['Action', 'Fantasy', 'Historical'], totalEpisodes: 26, status: 'Completed', releaseYear: 2019, score: 8.7 },
+  { _id: '20', malId: 20, title: 'Naruto', synopsis: 'A young ninja seeks recognition from his peers and dreams of becoming the Hokage of his village.', coverImage: 'https://cdn.myanimelist.net/images/anime/13/17405l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/13/17405l.jpg', genres: ['Action', 'Adventure', 'Martial Arts'], totalEpisodes: 220, status: 'Completed', releaseYear: 2002, score: 8.4 },
+  { _id: '30276', malId: 30276, title: 'One Punch Man', synopsis: 'Saitama is a hero who can defeat any opponent with a single punch but seeks a worthy challenge.', coverImage: 'https://cdn.myanimelist.net/images/anime/12/76049l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/12/76049l.jpg', genres: ['Action', 'Comedy', 'Sci-Fi'], totalEpisodes: 12, status: 'Completed', releaseYear: 2015, score: 8.8 }
+];
+
 /**
- * Controller: Get Anime Catalog (DB First, API Fallback)
+ * Controller: Get Anime Catalog (DB First, API Fallback, Static Emergency Fallback)
  */
 const getAnimeCatalog = async (req, res) => {
   try {
@@ -14,7 +26,7 @@ const getAnimeCatalog = async (req, res) => {
     // Cache Miss: Fetch from Jikan API and save to DB
     if (!catalog || catalog.length === 0) {
       console.log('⚡ [CACHE MISS] Fetching fresh catalog from external provider...');
-      const apiRes = await axios.get(`${JIKAN_BASE_URL}/top/anime?filter=bypopularity&limit=20`);
+      const apiRes = await axios.get(`${JIKAN_BASE_URL}/top/anime?filter=bypopularity&limit=20`, { timeout: 8000 });
       const rawData = apiRes.data?.data || [];
 
       const docs = [];
@@ -47,7 +59,9 @@ const getAnimeCatalog = async (req, res) => {
     return res.status(200).json(catalog);
   } catch (error) {
     console.error(`Error in getAnimeCatalog: ${error.message}`);
-    return res.status(500).json({ message: 'Server error while fetching anime catalog' });
+    // Return static fallback instead of 500 — frontend always renders something
+    console.log('⚡ [STATIC FALLBACK] Jikan & MongoDB unavailable, serving static catalog.');
+    return res.status(200).json(STATIC_CATALOG_FALLBACK);
   }
 };
 

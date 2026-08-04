@@ -1,160 +1,210 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import API from '../services/api';
+import { fetchTrendingAnime } from '../services/api';
 import AnimeCard from '../components/AnimeCard';
-import { Play, Plus, Sparkles, Flame, Film } from 'lucide-react';
+import { Play, Plus, Flame, Sparkles, TrendingUp } from 'lucide-react';
 
+// ─── Skeleton loader card ────────────────────────────────────────────────────
 const SkeletonCard = () => (
-  <div className="glass-panel rounded-2xl overflow-hidden animate-pulse flex flex-col h-72">
-    <div className="aspect-[3/4] w-full bg-white/5" />
-    <div className="p-4 flex flex-col gap-2">
-      <div className="h-4 bg-white/10 rounded w-3/4" />
-      <div className="h-3 bg-white/5 rounded w-1/2 mt-1" />
+  <div className="rounded-2xl overflow-hidden animate-pulse flex flex-col" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+    <div className="aspect-[3/4] w-full" style={{ background: 'rgba(255,255,255,0.06)' }} />
+    <div className="p-3 flex flex-col gap-2">
+      <div className="h-3 rounded" style={{ background: 'rgba(255,255,255,0.1)', width: '75%' }} />
+      <div className="h-2.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', width: '50%' }} />
     </div>
   </div>
 );
 
-const Home = () => {
-  const [animeCatalog, setAnimeCatalog] = useState([]);
-  const [loading, setLoading] = useState(true);
+// ─── Hero skeleton ───────────────────────────────────────────────────────────
+const HeroSkeleton = () => (
+  <section className="relative w-full h-[82vh] min-h-[520px] animate-pulse" style={{ background: 'rgba(255,255,255,0.03)' }}>
+    <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0B0C10 0%, transparent 100%)' }} />
+    <div className="absolute bottom-16 left-8 space-y-4 max-w-2xl">
+      <div className="h-5 w-32 rounded-full" style={{ background: 'rgba(139,92,246,0.3)' }} />
+      <div className="h-14 w-96 rounded-xl" style={{ background: 'rgba(255,255,255,0.1)' }} />
+      <div className="h-4 w-80 rounded" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      <div className="h-4 w-72 rounded" style={{ background: 'rgba(255,255,255,0.04)' }} />
+    </div>
+  </section>
+);
 
+// ─── Home Page ───────────────────────────────────────────────────────────────
+const Home = () => {
+  const [animeList, setAnimeList] = useState([]);
+  const [heroAnime, setHeroAnime] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchCatalog = async () => {
+    let mounted = true;
+    const loadCatalog = async () => {
       try {
-        setLoading(true);
-        // Fetch from MongoDB backend endpoint /api/anime (populated by cron job / on-demand)
-        const response = await API.get('/anime');
-        if (response.data && response.data.length > 0) {
-          setAnimeCatalog(response.data);
+        const data = await fetchTrendingAnime();
+        if (mounted && data && data.length > 0) {
+          setAnimeList(data);
+          setHeroAnime(data[0]);
         }
       } catch (err) {
-        console.warn('API fetch error, fallback to initial entries:', err);
+        console.error('[Home] Failed to load catalog:', err);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
-
-    fetchCatalog();
+    loadCatalog();
+    return () => { mounted = false; };
   }, []);
 
-  const heroAnime = animeCatalog.length > 0 ? animeCatalog[0] : null;
+  const handleWatchNow = () => {
+    if (heroAnime) {
+      navigate(`/watch/${heroAnime._id || heroAnime.malId || '21'}`);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] text-zinc-100 pb-20">
-      {/* Full-width Dramatic Hero Section */}
-      <section className="relative w-full h-[85vh] min-h-[580px] max-h-[800px] overflow-hidden flex items-end">
-        {heroAnime && (
-          <div className="absolute inset-0 z-0">
+    <div className="min-h-screen text-white pb-24 overflow-x-hidden" style={{ background: '#0B0C10' }}>
+
+      {/* ── HERO SECTION ─────────────────────────────────────────────────── */}
+      {loading ? <HeroSkeleton /> : heroAnime && (
+        <section className="relative w-full h-[82vh] min-h-[520px] flex items-end">
+          {/* Background artwork */}
+          <div className="absolute inset-0 overflow-hidden">
             <img
               src={heroAnime.bannerImage || heroAnime.coverImage}
               alt={heroAnime.title}
-              className="w-full h-full object-cover object-center scale-105 filter brightness-75 transition-all duration-1000"
+              className="w-full h-full object-cover object-center"
+              style={{ filter: 'brightness(0.75)', transform: 'scale(1.04)', transition: 'transform 8s ease-out' }}
             />
-            {/* Dramatic Bottom-to-Top Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/60 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0B0C10] via-[#0B0C10]/75 to-transparent w-4/5" />
+            {/* Gradient overlays */}
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0B0C10 0%, #0B0C10aa 30%, transparent 70%)' }} />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, #0B0C10 0%, #0B0C10bb 35%, transparent 65%)' }} />
           </div>
-        )}
 
-        {/* Hero Content */}
-        {heroAnime && (
-          <div className="relative z-10 max-w-7xl mx-auto px-6 pb-20 w-full flex flex-col items-start gap-4">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-400/30 text-indigo-300 text-xs font-semibold backdrop-blur-md shadow-[0_0_15px_rgba(99,102,241,0.3)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>#1 Featured Anime</span>
-            </div>
+          {/* Hero content */}
+          <div className="relative z-10 max-w-7xl mx-auto px-6 pb-16 w-full">
+            <div className="max-w-2xl space-y-5">
 
-            <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight bg-gradient-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-transparent max-w-3xl leading-tight">
-              {heroAnime.title}
-            </h1>
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider"
+                style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)', color: '#c4b5fd' }}>
+                <Sparkles className="w-3.5 h-3.5" />
+                Featured Today
+              </div>
 
-            <div className="flex flex-wrap gap-2 my-1">
-              {heroAnime.genres && heroAnime.genres.map((g, idx) => (
-                <span key={idx} className="px-3 py-1 rounded-full text-xs font-medium bg-white/10 backdrop-blur-md border border-white/10 text-zinc-200">
-                  {g}
-                </span>
-              ))}
-            </div>
+              {/* Title */}
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-none"
+                style={{ background: 'linear-gradient(135deg, #fff 0%, #c4b5fd 60%, #818cf8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                {heroAnime.title}
+              </h1>
 
-            <p className="text-zinc-300 text-sm sm:text-base max-w-2xl line-clamp-3 leading-relaxed">
-              {heroAnime.synopsis}
-            </p>
+              {/* Genres */}
+              {heroAnime.genres && (
+                <div className="flex flex-wrap gap-2">
+                  {heroAnime.genres.slice(0, 4).map((g, i) => (
+                    <span key={i} className="px-3 py-1 rounded-full text-xs font-medium"
+                      style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#d4d4d8' }}>
+                      {g}
+                    </span>
+                  ))}
+                </div>
+              )}
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-4 pt-2">
-              <button
-                onClick={() => navigate(`/watch/${heroAnime._id || heroAnime.malId || '1'}`)}
-                className="flex items-center gap-2.5 px-7 py-3.5 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white font-bold text-sm hover:from-indigo-400 hover:to-violet-500 shadow-[0_0_25px_rgba(99,102,241,0.6)] transition-all duration-300 transform hover:-translate-y-0.5"
-              >
-                <Play className="w-4 h-4 fill-current ml-0.5" />
-                <span>Watch Now</span>
-              </button>
-              <button className="flex items-center gap-2 px-5 py-3.5 rounded-full bg-white/10 border border-white/15 text-zinc-200 font-semibold text-sm hover:bg-white/20 hover:border-indigo-400/40 backdrop-blur-lg transition-all duration-300">
-                <Plus className="w-4 h-4" />
-                <span>Add to Watchlist</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Catalog Sections */}
-      <main className="max-w-7xl mx-auto px-6 mt-10 flex flex-col gap-12">
-        {/* Trending Now Section */}
-        <section>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Flame className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white tracking-wide">
-                Trending Now
-              </h2>
-              <p className="text-xs text-zinc-400">
-                Top anime from your MongoDB database
+              {/* Synopsis */}
+              <p className="text-sm md:text-base leading-relaxed line-clamp-3" style={{ color: '#a1a1aa' }}>
+                {heroAnime.synopsis || 'Experience premium anime streaming with automated catalog updates and cinematic playback.'}
               </p>
+
+              {/* Metadata row */}
+              <div className="flex items-center gap-4 text-xs" style={{ color: '#71717a' }}>
+                {heroAnime.score && (
+                  <span className="flex items-center gap-1" style={{ color: '#fbbf24' }}>
+                    ★ {heroAnime.score}
+                  </span>
+                )}
+                {heroAnime.releaseYear && <span>{heroAnime.releaseYear}</span>}
+                {heroAnime.totalEpisodes && <span>{heroAnime.totalEpisodes} Episodes</span>}
+                {heroAnime.status && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
+                    style={{ background: heroAnime.status === 'Ongoing' ? 'rgba(34,211,238,0.15)' : 'rgba(139,92,246,0.15)', color: heroAnime.status === 'Ongoing' ? '#22d3ee' : '#c4b5fd', border: `1px solid ${heroAnime.status === 'Ongoing' ? 'rgba(34,211,238,0.3)' : 'rgba(139,92,246,0.3)'}` }}>
+                    {heroAnime.status}
+                  </span>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-4 pt-2">
+                <button
+                  onClick={handleWatchNow}
+                  className="flex items-center gap-2.5 px-7 py-3.5 rounded-full font-bold text-sm text-white transition-all duration-300 hover:opacity-90 hover:-translate-y-0.5"
+                  style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)', boxShadow: '0 0 30px rgba(139,92,246,0.5)' }}>
+                  <Play className="w-4 h-4 fill-current" />
+                  Watch Now
+                </button>
+                <button
+                  className="flex items-center gap-2 px-5 py-3.5 rounded-full font-semibold text-sm text-zinc-200 transition-all duration-300 hover:bg-white/10"
+                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(12px)' }}>
+                  <Plus className="w-4 h-4" />
+                  Add to Library
+                </button>
+              </div>
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── CATALOG SECTION ──────────────────────────────────────────────── */}
+      <main className="max-w-7xl mx-auto px-6 space-y-14" style={{ marginTop: heroAnime || loading ? '-3rem' : '6rem', position: 'relative', zIndex: 20 }}>
+
+        {/* Trending row */}
+        <section>
+          <div className="flex items-center justify-between mb-7">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-2xl" style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)' }}>
+                <Flame className="w-5 h-5" style={{ color: '#8B5CF6' }} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Trending Right Now</h2>
+                <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>Live catalog from Jikan &amp; AniList</p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold cursor-pointer transition-colors" style={{ color: '#8B5CF6' }}>
+              Explore All →
+            </span>
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <SkeletonCard key={idx} />
-              ))}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+              {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {animeCatalog.map((anime) => (
-                <AnimeCard key={anime._id} anime={anime} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+              {animeList.map((anime) => (
+                <AnimeCard key={anime._id || anime.malId} anime={anime} />
               ))}
             </div>
           )}
         </section>
 
-        {/* New Releases Section */}
-        <section>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
-              <Film className="w-5 h-5" />
+        {/* Top Picks row (second section using same data) */}
+        {!loading && animeList.length > 6 && (
+          <section>
+            <div className="flex items-center justify-between mb-7">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl" style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                  <TrendingUp className="w-5 h-5" style={{ color: '#6366F1' }} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white tracking-tight">Top Picks For You</h2>
+                  <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>Curated from top-rated classics</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white tracking-wide">
-                New Releases
-              </h2>
-              <p className="text-xs text-zinc-400">
-                Latest catalog sync
-              </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+              {[...animeList].reverse().slice(0, 6).map((anime) => (
+                <AnimeCard key={`top-${anime._id || anime.malId}`} anime={anime} />
+              ))}
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {animeCatalog.slice(0, 4).map((anime) => (
-              <AnimeCard key={`recent-${anime._id}`} anime={anime} />
-            ))}
-          </div>
-        </section>
+          </section>
+        )}
       </main>
     </div>
   );
