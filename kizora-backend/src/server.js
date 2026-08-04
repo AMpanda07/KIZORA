@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const connectDB = require('./config/db');
 const streamRoutes = require('./routes/stream.routes');
+const animeRoutes = require('./routes/anime.routes');
 
 // Load environment variables
 dotenv.config();
@@ -13,13 +14,21 @@ connectDB();
 
 const app = express();
 
-// Middleware
-app.use(helmet());
-app.use(cors());
+// Security and CORS Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
+
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// Routes
+// Routes Registration
 app.use('/api/stream', streamRoutes);
+app.use('/api/anime', animeRoutes);
 
 // Health-check route
 app.get('/', (req, res) => {

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import API from '../services/api';
 import AnimeCard from '../components/AnimeCard';
-import { Play, Plus, Sparkles, Flame } from 'lucide-react';
+import { Play, Plus, Sparkles, Flame, Loader2 } from 'lucide-react';
 
-const placeholderTrendingAnime = [
+const fallbackTrendingAnime = [
   {
     _id: '1',
     title: 'One Piece',
@@ -54,47 +55,75 @@ const placeholderTrendingAnime = [
 ];
 
 const Home = () => {
-  const heroAnime = placeholderTrendingAnime[0];
+  const [animeCatalog, setAnimeCatalog] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCatalog = async () => {
+      try {
+        setLoading(true);
+        const response = await API.get('/anime');
+        if (response.data && response.data.length > 0) {
+          setAnimeCatalog(response.data);
+        } else {
+          setAnimeCatalog(fallbackTrendingAnime);
+        }
+      } catch (err) {
+        console.warn('API error, using fallback catalog data:', err);
+        setAnimeCatalog(fallbackTrendingAnime);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCatalog();
+  }, []);
+
+  const heroAnime = animeCatalog.length > 0 ? animeCatalog[0] : fallbackTrendingAnime[0];
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 pb-20">
+      {/* Floating Glassmorphic Loading Spinner */}
+      {loading && (
+        <div className="fixed top-20 right-6 z-50 px-4 py-2 rounded-full bg-black/60 backdrop-blur-xl border border-cyan-500/30 text-cyan-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(34,211,238,0.3)] animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+          <span>Syncing KIZORA Catalog...</span>
+        </div>
+      )}
+
       {/* Hero Banner Section */}
       <section className="relative w-full h-[80vh] min-h-[550px] max-h-[750px] overflow-hidden flex items-end">
-        {/* Background Image with Gradient Mask */}
+        {/* Background Image */}
         <div className="absolute inset-0 z-0">
           <img
-            src={heroAnime.bannerImage}
+            src={heroAnime.bannerImage || heroAnime.coverImage}
             alt={heroAnime.title}
             className="w-full h-full object-cover object-center scale-105 filter brightness-75 transition-all duration-1000"
           />
-          {/* Antigravity Glass & Fade Overlays */}
+          {/* Overlays */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#09090b]/60 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#09090b]/70 to-transparent w-3/4" />
         </div>
 
         {/* Hero Content */}
         <div className="relative z-10 max-w-7xl mx-auto px-6 pb-16 w-full flex flex-col items-start gap-4">
-          {/* Trending Badge */}
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-semibold backdrop-blur-md shadow-[0_0_15px_rgba(34,211,238,0.2)]">
             <Sparkles className="w-3.5 h-3.5" />
             <span>#1 Spotlight Trending</span>
           </div>
 
-          {/* Hero Title */}
           <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight bg-gradient-to-r from-white via-zinc-100 to-cyan-200 bg-clip-text text-transparent max-w-2xl">
             {heroAnime.title}
           </h1>
 
-          {/* Hero Synopsis */}
           <p className="text-zinc-300 text-sm sm:text-base max-w-xl line-clamp-3 leading-relaxed">
             {heroAnime.synopsis}
           </p>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-4 pt-2">
             <button className="flex items-center gap-2.5 px-6 py-3.5 rounded-full bg-cyan-400 text-black font-bold text-sm hover:bg-cyan-300 hover:shadow-[0_0_25px_rgba(34,211,238,0.6)] transition-all duration-300 transform hover:-translate-y-0.5">
               <Play className="w-4 h-4 fill-current" />
-              <span>Watch Episode 1</span>
+              <span>Watch Now</span>
             </button>
             <button className="flex items-center gap-2 px-5 py-3.5 rounded-full bg-white/10 border border-white/15 text-zinc-200 font-semibold text-sm hover:bg-white/20 hover:border-cyan-400/40 backdrop-blur-lg transition-all duration-300">
               <Plus className="w-4 h-4" />
@@ -104,9 +133,8 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Main Content Sections */}
+      {/* Main Catalog Grid */}
       <main className="max-w-7xl mx-auto px-6 mt-6">
-        {/* Trending Now Section */}
         <section className="mb-16">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
@@ -115,22 +143,17 @@ const Home = () => {
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-white tracking-wide">
-                  Trending Now
+                  Trending Catalog
                 </h2>
                 <p className="text-xs text-zinc-400">
-                  Most watched anime on KIZORA this week
+                  Live database content from KIZORA API
                 </p>
               </div>
             </div>
-
-            <button className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors">
-              View All &rarr;
-            </button>
           </div>
 
-          {/* Grid of Anime Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {placeholderTrendingAnime.map((anime) => (
+            {animeCatalog.map((anime) => (
               <AnimeCard key={anime._id} anime={anime} />
             ))}
           </div>
