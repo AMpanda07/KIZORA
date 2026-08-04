@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const connectDB = require('./config/db');
 const streamRoutes = require('./routes/stream.routes');
 const animeRoutes = require('./routes/anime.routes');
+const providerRoutes = require('./routes/provider.routes');
 
 // Load environment variables
 dotenv.config();
@@ -29,12 +30,13 @@ app.use(express.json());
 // Routes Registration
 app.use('/api/stream', streamRoutes);
 app.use('/api/anime', animeRoutes);
+app.use('/api/provider', providerRoutes);
 
 // Health-check route
 app.get('/', (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'KIZORA API is running'
+    message: 'KIZORA Production Aggregator API is running'
   });
 });
 

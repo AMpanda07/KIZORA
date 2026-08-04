@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Hls from 'hls.js';
 import {
   Play,
   Pause,
@@ -8,13 +9,16 @@ import {
   Minimize,
   RotateCcw,
   RotateCw,
-  Settings
+  Settings,
+  Layers,
+  Check
 } from 'lucide-react';
 
-const VideoPlayer = ({ src, poster, title }) => {
+const VideoPlayer = ({ src, poster, title, sources = [], servers = [] }) => {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
 
+  const [currentSrc, setCurrentSrc] = useState(src);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -22,10 +26,88 @@ const VideoPlayer = ({ src, poster, title }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState('Auto HLS');
 
   const controlsTimeoutRef = useRef(null);
+  const hlsRef = useRef(null);
 
-  // Handle Play / Pause toggle
+  // Update currentSrc when prop changes
+  useEffect(() => {
+    if (src) {
+      setCurrentSrc(src);
+    }
+  }, [src]);
+
+  // HLS Engine Integration
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !currentSrc) return;
+
+    // Check if source is HLS (.m3u8)
+    const isHlsSource = currentSrc.includes('.m3u8') || currentSrc.includes('m3u8');
+
+    if (isHlsSource) {
+      if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+        }
+
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 90
+        });
+
+        hls.loadSource(currentSrc);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (isPlaying) {
+            video.play().catch(e => console.warn('HLS auto-play prevented:', e));
+          }
+        });
+
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.warn('HLS network error, attempting recovery...');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.warn('HLS media error, recovering...');
+                hls.recoverMediaError();
+                break;
+              default:
+                hls.destroy();
+                break;
+            }
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS support (Safari / iOS)
+        video.src = currentSrc;
+      }
+    } else {
+      // Standard MP4 stream
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      video.src = currentSrc;
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [currentSrc]);
+
+  // Handle Play / Pause
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (isPlaying) {
@@ -36,14 +118,14 @@ const VideoPlayer = ({ src, poster, title }) => {
     setIsPlaying(!isPlaying);
   };
 
-  // Time update listener
+  // Time Update
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime);
     }
   };
 
-  // Duration loaded listener
+  // Duration Update
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
@@ -59,7 +141,7 @@ const VideoPlayer = ({ src, poster, title }) => {
     }
   };
 
-  // Handle Volume change
+  // Volume change
   const handleVolumeChange = (e) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
@@ -78,14 +160,14 @@ const VideoPlayer = ({ src, poster, title }) => {
     videoRef.current.muted = newMuteState;
   };
 
-  // Fast forward / Rewind
+  // Skip seconds
   const skip = (seconds) => {
     if (videoRef.current) {
       videoRef.current.currentTime += seconds;
     }
   };
 
-  // Toggle Fullscreen
+  // Fullscreen toggle
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
 
@@ -100,7 +182,7 @@ const VideoPlayer = ({ src, poster, title }) => {
     }
   };
 
-  // Mouse idle detection for auto-hiding controls
+  // Mouse idle detection
   const handleMouseMove = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) {
@@ -109,6 +191,7 @@ const VideoPlayer = ({ src, poster, title }) => {
     if (isPlaying) {
       controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
+        setShowQualityMenu(false);
       }, 3500);
     }
   };
@@ -121,7 +204,6 @@ const VideoPlayer = ({ src, poster, title }) => {
     };
   }, [isPlaying]);
 
-  // Format time MM:SS
   const formatTime = (timeInSeconds) => {
     if (isNaN(timeInSeconds)) return '00:00';
     const minutes = Math.floor(timeInSeconds / 60);
@@ -129,17 +211,22 @@ const VideoPlayer = ({ src, poster, title }) => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const handleSourceSelect = (source) => {
+    setCurrentSrc(source.url);
+    setSelectedQuality(source.quality);
+    setShowQualityMenu(false);
+  };
+
   return (
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
-      onMouseLeave={() => isPlaying && setShowControls(false)}
+      onMouseLeave={() => isPlaying && (setShowControls(false), setShowQualityMenu(false))}
       className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.8)] border border-white/10 group select-none"
     >
-      {/* Video Element */}
+      {/* HTML5 Video Element */}
       <video
         ref={videoRef}
-        src={src}
         poster={poster}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
@@ -147,7 +234,7 @@ const VideoPlayer = ({ src, poster, title }) => {
         className="w-full h-full object-contain cursor-pointer"
       />
 
-      {/* Big Center Play Overlay (when paused) */}
+      {/* Center Play Overlay when paused */}
       {!isPlaying && (
         <div
           onClick={togglePlay}
@@ -159,14 +246,42 @@ const VideoPlayer = ({ src, poster, title }) => {
         </div>
       )}
 
+      {/* Settings / Server Selection Popover */}
+      {showQualityMenu && (
+        <div className="absolute bottom-20 right-6 z-40 w-56 p-3 rounded-2xl bg-black/80 backdrop-blur-xl border border-white/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] text-xs flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2">
+          <div className="px-2 py-1 text-zinc-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5 border-b border-white/10 mb-1">
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Stream Source / Quality</span>
+          </div>
+          {sources && sources.length > 0 ? (
+            sources.map((srcItem, index) => (
+              <button
+                key={index}
+                onClick={() => handleSourceSelect(srcItem)}
+                className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-colors ${
+                  currentSrc === srcItem.url
+                    ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30'
+                    : 'text-zinc-300 hover:bg-white/10'
+                }`}
+              >
+                <span>{srcItem.quality}</span>
+                {currentSrc === srcItem.url && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-zinc-400">Default HLS Engine</div>
+          )}
+        </div>
+      )}
+
       {/* Floating Antigravity Control Bar */}
       <div
         className={`absolute bottom-4 left-4 right-4 z-30 backdrop-blur-xl bg-black/60 border border-white/10 rounded-2xl px-5 py-3 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] transition-opacity duration-300 flex flex-col gap-2 ${
           showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Progress Bar / Seeker */}
-        <div className="relative w-full flex items-center group/timeline">
+        {/* Progress Bar Seeker */}
+        <div className="relative w-full flex items-center">
           <input
             type="range"
             min="0"
@@ -180,9 +295,9 @@ const VideoPlayer = ({ src, poster, title }) => {
           />
         </div>
 
-        {/* Controls Bar Actions */}
+        {/* Control Actions */}
         <div className="flex items-center justify-between">
-          {/* Left Actions (Play/Pause, Skip, Time, Title) */}
+          {/* Left Actions */}
           <div className="flex items-center gap-4">
             <button
               onClick={togglePlay}
@@ -211,7 +326,6 @@ const VideoPlayer = ({ src, poster, title }) => {
               <RotateCw className="w-4 h-4" />
             </button>
 
-            {/* Time Indicator */}
             <div className="text-xs font-mono text-zinc-300">
               <span className="text-cyan-300">{formatTime(currentTime)}</span>
               <span className="text-zinc-500 mx-1">/</span>
@@ -219,8 +333,18 @@ const VideoPlayer = ({ src, poster, title }) => {
             </div>
           </div>
 
-          {/* Right Actions (Volume, Fullscreen) */}
-          <div className="flex items-center gap-4">
+          {/* Right Actions */}
+          <div className="flex items-center gap-3">
+            {/* Server / Quality Menu Toggle */}
+            <button
+              onClick={() => setShowQualityMenu(!showQualityMenu)}
+              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-400/50 text-white hover:text-cyan-400 transition-all flex items-center gap-1.5 text-xs font-semibold"
+              title="Stream Quality & Servers"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline text-zinc-300">{selectedQuality}</span>
+            </button>
+
             {/* Volume Control */}
             <div className="flex items-center gap-2 group/volume">
               <button
