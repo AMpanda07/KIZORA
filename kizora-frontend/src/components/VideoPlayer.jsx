@@ -1,101 +1,101 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Hls from 'hls.js';
 import {
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Maximize,
-  Minimize,
-  RotateCcw,
-  RotateCw,
-  Settings,
-  Layers,
-  Check
+  Play, Pause, Volume2, VolumeX,
+  Maximize, Minimize, RotateCcw, RotateCw,
+  Settings, Layers, Check, Loader2
 } from 'lucide-react';
 
-const VideoPlayer = ({ src, poster, title, sources = [], servers = [] }) => {
-  const videoRef = useRef(null);
+// ─────────────────────────────────────────────────────────────────────────────
+// VideoPlayer — accepts `videoUrl` prop (HLS .m3u8 or MP4), auto-destroys &
+// re-initialises the HLS instance whenever `videoUrl` changes.
+// Styled in the KIZORA Antigravity theme: dark glass controls, neon purple glow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VideoPlayer = ({
+  videoUrl,        // primary: HLS .m3u8 or MP4 URL
+  src,             // legacy alias — treated identically to videoUrl
+  poster,
+  title,
+  sources = [],    // [{url, quality, isHLS}] — extra quality options
+  servers = [],    // [{name, id}] — server labels
+}) => {
+  // Resolve the URL from either prop
+  const resolvedUrl = videoUrl || src || '';
+
+  const videoRef     = useRef(null);
   const containerRef = useRef(null);
+  const hlsRef       = useRef(null);
+  const hideTimer    = useRef(null);
 
-  const [currentSrc, setCurrentSrc] = useState(src);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
+  const [currentSrc,     setCurrentSrc]     = useState(resolvedUrl);
+  const [isPlaying,      setIsPlaying]      = useState(false);
+  const [isBuffering,    setIsBuffering]    = useState(false);
+  const [currentTime,    setCurrentTime]    = useState(0);
+  const [duration,       setDuration]       = useState(0);
+  const [volume,         setVolume]         = useState(1);
+  const [isMuted,        setIsMuted]        = useState(false);
+  const [isFullscreen,   setIsFullscreen]   = useState(false);
+  const [showControls,   setShowControls]   = useState(true);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState('Auto HLS');
+  const [selectedQuality, setSelectedQuality] = useState('Auto');
 
-  const controlsTimeoutRef = useRef(null);
-  const hlsRef = useRef(null);
-
-  // Update currentSrc when prop changes
+  // ── Sync currentSrc whenever the parent URL changes ──────────────────────
   useEffect(() => {
-    if (src) {
-      setCurrentSrc(src);
+    const incoming = videoUrl || src || '';
+    if (incoming && incoming !== currentSrc) {
+      setCurrentSrc(incoming);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
     }
-  }, [src]);
+  }, [videoUrl, src]); // eslint-disable-line
 
-  // HLS Engine Integration
+  // ── HLS engine: destroy previous instance & mount new one ────────────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !currentSrc) return;
 
-    // Check if source is HLS (.m3u8)
-    const isHlsSource = currentSrc.includes('.m3u8') || currentSrc.includes('m3u8');
+    // Tear down existing HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
 
-    if (isHlsSource) {
-      if (Hls.isSupported()) {
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
+    const isHls = currentSrc.includes('.m3u8') || currentSrc.includes('m3u8');
+
+    if (isHls && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker:    true,
+        lowLatencyMode:  true,
+        backBufferLength: 90,
+        maxBufferLength: 30,
+      });
+
+      hls.loadSource(currentSrc);
+      hls.attachMedia(video);
+      hlsRef.current = hls;
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setIsBuffering(false);
+      });
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        } else {
+          hls.destroy();
         }
+      });
 
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 90
-        });
-
-        hls.loadSource(currentSrc);
-        hls.attachMedia(video);
-        hlsRef.current = hls;
-
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (isPlaying) {
-            video.play().catch(e => console.warn('HLS auto-play prevented:', e));
-          }
-        });
-
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.warn('HLS network error, attempting recovery...');
-                hls.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.warn('HLS media error, recovering...');
-                hls.recoverMediaError();
-                break;
-              default:
-                hls.destroy();
-                break;
-            }
-          }
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Native HLS support (Safari / iOS)
-        video.src = currentSrc;
-      }
+    } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native Safari HLS
+      video.src = currentSrc;
     } else {
-      // Standard MP4 stream
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
+      // Plain MP4
       video.src = currentSrc;
     }
 
@@ -107,277 +107,314 @@ const VideoPlayer = ({ src, poster, title, sources = [], servers = [] }) => {
     };
   }, [currentSrc]);
 
-  // Handle Play / Pause
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      videoRef.current.play();
-    }
-    setIsPlaying(!isPlaying);
-  };
+  // ── Fullscreen change listener ────────────────────────────────────────────
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
-  // Time Update
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-    }
-  };
-
-  // Duration Update
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-    }
-  };
-
-  // Handle Seek
-  const handleSeek = (e) => {
-    const seekTime = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.currentTime = seekTime;
-      setCurrentTime(seekTime);
-    }
-  };
-
-  // Volume change
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume;
-      videoRef.current.muted = newVolume === 0;
-      setIsMuted(newVolume === 0);
-    }
-  };
-
-  // Toggle Mute
-  const toggleMute = () => {
-    if (!videoRef.current) return;
-    const newMuteState = !isMuted;
-    setIsMuted(newMuteState);
-    videoRef.current.muted = newMuteState;
-  };
-
-  // Skip seconds
-  const skip = (seconds) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime += seconds;
-    }
-  };
-
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(err => console.error(err));
-    } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      }).catch(err => console.error(err));
-    }
-  };
-
-  // Mouse idle detection
-  const handleMouseMove = () => {
+  // ── Controls auto-hide ────────────────────────────────────────────────────
+  const resetHideTimer = useCallback(() => {
     setShowControls(true);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      if (isPlaying) {
         setShowControls(false);
         setShowQualityMenu(false);
-      }, 3500);
+      }
+    }, 3500);
+  }, [isPlaying]);
+
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
+
+  // ── Playback handlers ─────────────────────────────────────────────────────
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) { v.play(); setIsPlaying(true); }
+    else          { v.pause(); setIsPlaying(false); }
+  };
+
+  const skip = (sec) => {
+    if (videoRef.current) videoRef.current.currentTime += sec;
+  };
+
+  const handleSeek = (e) => {
+    const t = parseFloat(e.target.value);
+    if (videoRef.current) videoRef.current.currentTime = t;
+    setCurrentTime(t);
+  };
+
+  const handleVolumeChange = (e) => {
+    const v = parseFloat(e.target.value);
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      videoRef.current.muted = v === 0;
+    }
+    setIsMuted(v === 0);
+  };
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    const next = !isMuted;
+    setIsMuted(next);
+    videoRef.current.muted = next;
+  };
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(console.error);
+    } else {
+      document.exitFullscreen().catch(console.error);
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, [isPlaying]);
-
-  const formatTime = (timeInSeconds) => {
-    if (isNaN(timeInSeconds)) return '00:00';
-    const minutes = Math.floor(timeInSeconds / 60);
-    const seconds = Math.floor(timeInSeconds % 60);
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const handleSourceSelect = (source) => {
-    setCurrentSrc(source.url);
-    setSelectedQuality(source.quality);
+  const handleSourceSelect = (s) => {
+    setCurrentSrc(s.url);
+    setSelectedQuality(s.quality);
     setShowQualityMenu(false);
+    setIsPlaying(false);
   };
 
+  const fmt = (s) => {
+    if (isNaN(s) || s === Infinity) return '00:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  };
+
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
+      onMouseMove={resetHideTimer}
       onMouseLeave={() => isPlaying && (setShowControls(false), setShowQualityMenu(false))}
-      className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.8)] border border-white/10 group select-none"
+      className="relative w-full select-none overflow-hidden"
+      style={{
+        aspectRatio: '16/9',
+        background: '#000',
+        borderRadius: '16px',
+        border: '1px solid rgba(124,58,237,0.2)',
+        boxShadow: '0 0 40px -8px rgba(124,58,237,0.5), 0 20px 60px rgba(0,0,0,0.8)',
+      }}
     >
-      {/* HTML5 Video Element */}
+      {/* ── HTML5 <video> ───────────────────────────────────────────────── */}
       <video
         ref={videoRef}
         poster={poster}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
         onClick={togglePlay}
+        onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
+        onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onWaiting={() => setIsBuffering(true)}
+        onPlaying={() => setIsBuffering(false)}
+        onEnded={() => setIsPlaying(false)}
         className="w-full h-full object-contain cursor-pointer"
+        playsInline
       />
 
-      {/* Center Play Overlay when paused */}
-      {!isPlaying && (
+      {/* ── Buffering spinner ───────────────────────────────────────────── */}
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Loader2
+            className="w-14 h-14 animate-spin"
+            style={{ color: '#8B5CF6', filter: 'drop-shadow(0 0 12px rgba(139,92,246,0.8))' }}
+          />
+        </div>
+      )}
+
+      {/* ── Paused center-play overlay ──────────────────────────────────── */}
+      {!isPlaying && !isBuffering && (
         <div
           onClick={togglePlay}
-          className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-xs cursor-pointer transition-all duration-300"
+          className="absolute inset-0 flex items-center justify-center cursor-pointer transition-opacity duration-300"
+          style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(2px)' }}
         >
-          <div className="w-20 h-20 rounded-full bg-cyan-400/90 text-black flex items-center justify-center shadow-[0_0_40px_rgba(34,211,238,0.8)] transform scale-90 hover:scale-100 transition-transform">
-            <Play className="w-10 h-10 fill-current ml-1" />
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center transition-transform duration-200 hover:scale-110"
+            style={{
+              background: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+              boxShadow: '0 0 50px rgba(124,58,237,0.9)',
+            }}
+          >
+            <Play className="w-9 h-9 text-white fill-current ml-1" />
           </div>
         </div>
       )}
 
-      {/* Settings / Server Selection Popover */}
+      {/* ── Title watermark (top-left, fades with controls) ─────────────── */}
+      {title && showControls && (
+        <div
+          className="absolute top-4 left-5 text-sm font-semibold transition-opacity duration-300 pointer-events-none"
+          style={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}
+        >
+          {title}
+        </div>
+      )}
+
+      {/* ── Quality / Source popover ─────────────────────────────────────── */}
       {showQualityMenu && (
-        <div className="absolute bottom-20 right-6 z-40 w-56 p-3 rounded-2xl bg-black/80 backdrop-blur-xl border border-white/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] text-xs flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2">
-          <div className="px-2 py-1 text-zinc-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5 border-b border-white/10 mb-1">
-            <Layers className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Stream Source / Quality</span>
+        <div
+          className="absolute bottom-20 right-5 z-40 w-56 p-3 rounded-2xl text-xs flex flex-col gap-1"
+          style={{
+            background: 'rgba(15,10,30,0.92)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(124,58,237,0.3)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+          }}
+        >
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 mb-1 text-[10px] font-bold uppercase tracking-widest"
+            style={{ borderBottom: '1px solid rgba(124,58,237,0.15)', color: '#7B6EA8' }}
+          >
+            <Layers className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
+            Stream Source
           </div>
-          {sources && sources.length > 0 ? (
-            sources.map((srcItem, index) => (
-              <button
-                key={index}
-                onClick={() => handleSourceSelect(srcItem)}
-                className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-colors ${
-                  currentSrc === srcItem.url
-                    ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30'
-                    : 'text-zinc-300 hover:bg-white/10'
-                }`}
-              >
-                <span>{srcItem.quality}</span>
-                {currentSrc === srcItem.url && <Check className="w-3.5 h-3.5 text-cyan-400" />}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-zinc-400">Default HLS Engine</div>
+
+          {sources.length > 0 ? sources.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => handleSourceSelect(s)}
+              className="w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-all duration-200"
+              style={{
+                background: currentSrc === s.url ? 'rgba(124,58,237,0.2)' : 'transparent',
+                border: currentSrc === s.url ? '1px solid rgba(124,58,237,0.4)' : '1px solid transparent',
+                color: currentSrc === s.url ? '#C4B5FD' : '#A1A1AA',
+              }}
+              onMouseEnter={e => { if (currentSrc !== s.url) e.currentTarget.style.background = 'rgba(124,58,237,0.1)'; }}
+              onMouseLeave={e => { if (currentSrc !== s.url) e.currentTarget.style.background = 'transparent'; }}
+            >
+              <span>{s.quality}</span>
+              {currentSrc === s.url && <Check className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />}
+            </button>
+          )) : (
+            <div className="px-3 py-2" style={{ color: '#7B6EA8' }}>Auto HLS Engine</div>
           )}
         </div>
       )}
 
-      {/* Floating Antigravity Control Bar */}
+      {/* ── Floating Control Bar ─────────────────────────────────────────── */}
       <div
-        className={`absolute bottom-4 left-4 right-4 z-30 backdrop-blur-xl bg-black/60 border border-white/10 rounded-2xl px-5 py-3 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] transition-opacity duration-300 flex flex-col gap-2 ${
-          showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+        className="absolute bottom-3 left-3 right-3 z-30 flex flex-col gap-2 px-4 py-3 rounded-2xl transition-all duration-300"
+        style={{
+          background: 'rgba(15,10,30,0.85)',
+          backdropFilter: 'blur(24px)',
+          border: '1px solid rgba(124,58,237,0.2)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+          opacity: showControls ? 1 : 0,
+          pointerEvents: showControls ? 'auto' : 'none',
+        }}
       >
-        {/* Progress Bar Seeker */}
-        <div className="relative w-full flex items-center">
+        {/* Progress bar */}
+        <div className="relative w-full group/progress flex items-center">
           <input
             type="range"
-            min="0"
+            min={0}
             max={duration || 100}
             value={currentTime}
+            step={0.1}
             onChange={handleSeek}
-            className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-cyan-400 hover:h-2.5 transition-all"
+            className="w-full h-1 rounded-full appearance-none cursor-pointer"
             style={{
-              background: `linear-gradient(to right, #22d3ee ${(currentTime / (duration || 1)) * 100}%, rgba(255,255,255,0.2) 0%)`
+              background: `linear-gradient(to right, #8B5CF6 ${progress}%, rgba(139,92,246,0.25) ${progress}%)`,
+              accentColor: '#8B5CF6',
             }}
           />
         </div>
 
-        {/* Control Actions */}
+        {/* Controls row */}
         <div className="flex items-center justify-between">
-          {/* Left Actions */}
-          <div className="flex items-center gap-4">
+          {/* Left cluster */}
+          <div className="flex items-center gap-3">
+            {/* Play/Pause */}
             <button
               onClick={togglePlay}
-              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-400/50 text-white hover:text-cyan-400 transition-all"
+              className="p-2 rounded-xl transition-all duration-200"
+              style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)', color: '#E2D9F3' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,58,237,0.15)'}
             >
-              {isPlaying ? (
-                <Pause className="w-5 h-5 fill-current" />
-              ) : (
-                <Play className="w-5 h-5 fill-current" />
-              )}
+              {isPlaying
+                ? <Pause className="w-4 h-4 fill-current" />
+                : <Play  className="w-4 h-4 fill-current" />}
             </button>
 
-            <button
-              onClick={() => skip(-10)}
-              className="p-1.5 rounded-lg text-zinc-300 hover:text-cyan-400 transition-colors"
-              title="Rewind 10s"
-            >
+            {/* Skip back */}
+            <button onClick={() => skip(-10)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#A1A1AA' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#C4B5FD'}
+              onMouseLeave={e => e.currentTarget.style.color = '#A1A1AA'}
+              title="Rewind 10s">
               <RotateCcw className="w-4 h-4" />
             </button>
 
-            <button
-              onClick={() => skip(10)}
-              className="p-1.5 rounded-lg text-zinc-300 hover:text-cyan-400 transition-colors"
-              title="Forward 10s"
-            >
+            {/* Skip forward */}
+            <button onClick={() => skip(10)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#A1A1AA' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#C4B5FD'}
+              onMouseLeave={e => e.currentTarget.style.color = '#A1A1AA'}
+              title="Forward 10s">
               <RotateCw className="w-4 h-4" />
             </button>
 
-            <div className="text-xs font-mono text-zinc-300">
-              <span className="text-cyan-300">{formatTime(currentTime)}</span>
-              <span className="text-zinc-500 mx-1">/</span>
-              <span>{formatTime(duration)}</span>
-            </div>
+            {/* Timestamp */}
+            <span className="text-xs font-mono hidden sm:block" style={{ color: '#A1A1AA' }}>
+              <span style={{ color: '#C4B5FD' }}>{fmt(currentTime)}</span>
+              <span style={{ color: '#4B3E7A', margin: '0 4px' }}>/</span>
+              {fmt(duration)}
+            </span>
           </div>
 
-          {/* Right Actions */}
+          {/* Right cluster */}
           <div className="flex items-center gap-3">
-            {/* Server / Quality Menu Toggle */}
+            {/* Quality selector */}
             <button
-              onClick={() => setShowQualityMenu(!showQualityMenu)}
-              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-400/50 text-white hover:text-cyan-400 transition-all flex items-center gap-1.5 text-xs font-semibold"
-              title="Stream Quality & Servers"
+              onClick={() => setShowQualityMenu(p => !p)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200"
+              style={{
+                background: showQualityMenu ? 'rgba(124,58,237,0.25)' : 'rgba(124,58,237,0.1)',
+                border: '1px solid rgba(124,58,237,0.25)',
+                color: '#C4B5FD',
+              }}
+              title="Stream Quality"
             >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline text-zinc-300">{selectedQuality}</span>
+              <Settings className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{selectedQuality}</span>
             </button>
 
-            {/* Volume Control */}
-            <div className="flex items-center gap-2 group/volume">
-              <button
-                onClick={toggleMute}
-                className="text-zinc-300 hover:text-cyan-400 transition-colors"
-              >
-                {isMuted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5 text-red-400" />
-                ) : (
-                  <Volume2 className="w-5 h-5" />
-                )}
+            {/* Volume */}
+            <div className="flex items-center gap-1.5">
+              <button onClick={toggleMute} className="transition-colors" style={{ color: '#A1A1AA' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#C4B5FD'}
+                onMouseLeave={e => e.currentTarget.style.color = '#A1A1AA'}>
+                {isMuted || volume === 0
+                  ? <VolumeX className="w-4 h-4" style={{ color: '#EF4444' }} />
+                  : <Volume2 className="w-4 h-4" />}
               </button>
               <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
+                type="range" min={0} max={1} step={0.05}
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-16 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                className="w-16 h-1 rounded-full appearance-none cursor-pointer"
+                style={{ accentColor: '#8B5CF6' }}
               />
             </div>
 
-            {/* Fullscreen Button */}
+            {/* Fullscreen */}
             <button
               onClick={toggleFullscreen}
-              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-400/50 text-white hover:text-cyan-400 transition-all"
+              className="p-2 rounded-xl transition-all duration-200"
+              style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)', color: '#E2D9F3' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.25)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,58,237,0.1)'}
             >
-              {isFullscreen ? (
-                <Minimize className="w-5 h-5" />
-              ) : (
-                <Maximize className="w-5 h-5" />
-              )}
+              {isFullscreen
+                ? <Minimize className="w-4 h-4" />
+                : <Maximize className="w-4 h-4" />}
             </button>
           </div>
         </div>
