@@ -1,79 +1,69 @@
 const axios = require('axios');
 
 // ─── Provider Config ──────────────────────────────────────────────────────────
-const CONSUMET_BASE   = process.env.CONSUMET_API_URL || 'https://api.consumet.org';
-const ANIMEKAI_BASE   = process.env.ANIMEKAI_API_URL || 'https://animekai.to';
+const ANIWATCH_BASE   = process.env.ANIWATCH_API_URL || 'https://aniwatch-api-v1-0.onrender.com';
 
 // Reliable public test HLS streams used when external providers fail or time out
 const FALLBACK_HLS    = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const FALLBACK_HLS_HD = 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8';
 
-// Fast 1200ms timeout for external scraper calls so requests respond immediately
-const FAST_TIMEOUT = 1200;
+// Fast timeout for external scraper calls so requests respond immediately
+const FAST_TIMEOUT = 30000;
 
-// ─── Normalize Consumet episode source response ───────────────────────────────
-const normalizeSources = (data, episodeId) => ({
-  episodeId,
-  timestamp:  Date.now(),
-  url:        data?.sources?.[0]?.url || FALLBACK_HLS,
-  sources:    (data?.sources || []).map(s => ({
-    url:     s.url,
-    quality: s.quality || 'Auto',
-    isHLS:   s.isM3U8 ?? s.url?.includes('.m3u8') ?? true,
-  })),
-  headers:    data?.headers || { Referer: ANIMEKAI_BASE },
-  servers:    data?.servers || [],
-  subtitles:  data?.subtitles || [],
-});
+// ─── Try Aniwatch direct API ────────────────────────────────────────────────────
+const tryAniwatch = async (animeId, episodeNum) => {
+  const ANIWATCH_BASE = process.env.ANIWATCH_API_URL || 'https://aniwatch-api-v1-0.onrender.com';
+  
+  try {
+    // 1. Fetch title from Jikan using MAL ID
+    const jikanRes = await axios.get(`https://api.jikan.moe/v4/anime/${animeId}`);
+    const title = jikanRes.data?.data?.title_english || jikanRes.data?.data?.title;
+    if (!title) throw new Error('Could not find anime title for ID: ' + animeId);
 
-// ─── Try Gogoanime via Consumet ───────────────────────────────────────────────
-const tryConsumetGogoanime = async (episodeId) => {
-  const url = `${CONSUMET_BASE}/anime/gogoanime/watch/${encodeURIComponent(episodeId)}`;
-  const resp = await axios.get(url, { timeout: FAST_TIMEOUT });
-  if (!resp.data?.sources?.length) throw new Error('No sources from Gogoanime');
-  return normalizeSources(resp.data, episodeId);
-};
+    // 2. Search Aniwatch for the title to get the slug
+    const searchRes = await axios.get(`${ANIWATCH_BASE}/api/v2/hianime/search?q=${encodeURIComponent(title)}`, { timeout: FAST_TIMEOUT });
+    const animes = searchRes.data?.data?.animes || [];
+    if (animes.length === 0) throw new Error('No Aniwatch results for ' + title);
+    
+    // We assume the first result is the most relevant
+    const aniwatchId = animes[0].id; // e.g., 'one-piece-100'
 
-// ─── Try Zoro / Aniwatch via Consumet ────────────────────────────────────────
-const tryConsumetZoro = async (episodeId) => {
-  const url = `${CONSUMET_BASE}/anime/zoro/watch?episodeId=${encodeURIComponent(episodeId)}`;
-  const resp = await axios.get(url, { timeout: FAST_TIMEOUT });
-  if (!resp.data?.sources?.length) throw new Error('No sources from Zoro');
-  return normalizeSources(resp.data, episodeId);
-};
+    // 3. Fetch episodes for this Aniwatch ID
+    const epsRes = await axios.get(`${ANIWATCH_BASE}/api/v2/hianime/anime/${aniwatchId}/episodes`, { timeout: FAST_TIMEOUT });
+    const eps = epsRes.data?.data?.episodes || [];
+    
+    // Find the specific episode by number
+    const targetEp = eps.find(e => parseInt(e.number) === episodeNum) || eps[0];
+    if (!targetEp) throw new Error('Episode not found in Aniwatch list');
 
-// ─── Try AnimeKai direct scrape ───────────────────────────────────────────────
-const tryAnimeKai = async (episodeId) => {
-  const url = `${ANIMEKAI_BASE}/ajax/episode/list/${encodeURIComponent(episodeId)}`;
-  const resp = await axios.get(url, {
-    timeout: FAST_TIMEOUT,
-    headers: {
-      Referer: ANIMEKAI_BASE,
-      'X-Requested-With': 'XMLHttpRequest',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    }
-  });
-  const html = resp.data?.html || resp.data;
-  if (!html) throw new Error('AnimeKai returned empty response');
+    const exactEpisodeId = targetEp.episodeId; // e.g., 'one-piece-100?ep=4'
 
-  const m3u8Match = (typeof html === 'string') && html.match(/(https?:\/\/[^\s"']+\.m3u8[^\s"']*)/);
-  if (!m3u8Match) throw new Error('No .m3u8 URL found in AnimeKai response');
-
-  const hlsUrl = m3u8Match[1];
-  return {
-    episodeId,
-    timestamp: Date.now(),
-    url: hlsUrl,
-    sources: [{ url: hlsUrl, quality: 'Auto HLS', isHLS: true }],
-    headers: { Referer: ANIMEKAI_BASE },
-    servers: [{ name: 'AnimeKai CDN', id: 'animekai-cdn' }],
-  };
+    // 4. Fetch the stream sources using the exact episode ID
+    const url = `${ANIWATCH_BASE}/api/v2/hianime/episode/sources?animeEpisodeId=${encodeURIComponent(exactEpisodeId)}&server=vidstreaming`;
+    const resp = await axios.get(url, { timeout: FAST_TIMEOUT });
+    if (!resp.data?.data?.sources?.length) throw new Error('No sources from Aniwatch');
+    
+    return {
+      episodeId: `${animeId}-ep-${episodeNum}`, // keep consistent with frontend format
+      timestamp: Date.now(),
+      url: resp.data.data.sources[0].url,
+      sources: resp.data.data.sources.map(s => ({
+        url: s.url,
+        quality: 'Auto',
+        isHLS: s.isM3U8
+      })),
+      headers: {},
+      servers: [{ name: 'Aniwatch', id: 'aniwatch' }],
+    };
+  } catch (err) {
+    console.error('Aniwatch resolution failed:', err.message);
+    throw err;
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Controller: getLiveStreamSources
-// Parallel resolver: attempts all providers in parallel with 1.2s timeout,
-// immediately falling back to Mux HLS if external calls fail/time out.
+// Resolves stream using ONLY the Aniwatch API, falling back to Mux HLS if it fails.
 // ─────────────────────────────────────────────────────────────────────────────
 const getLiveStreamSources = async (req, res) => {
   const rawId = req.params.id || req.params.episodeId || '';
@@ -89,33 +79,17 @@ const getLiveStreamSources = async (req, res) => {
   const animeId    = compoundMatch ? compoundMatch[1] : rawId;
   const episodeNum = compoundMatch ? parseInt(compoundMatch[2], 10) : 1;
 
-  console.log(`🎬 [STREAM] Resolving: rawId="${rawId}" → animeId="${animeId}", ep=${episodeNum}`);
-
-  const isNumericId     = /^\d+$/.test(animeId);
-  const gogoEpisodeSlug = isNumericId ? null : `${animeId}-episode-${episodeNum}`;
-  const zoroEpisodeId   = rawId;
-
-  // Run provider checks in parallel to minimize latency
-  const tasks = [];
-  if (gogoEpisodeSlug) {
-    tasks.push(tryConsumetGogoanime(gogoEpisodeSlug));
-  }
-  tasks.push(tryConsumetZoro(zoroEpisodeId));
-  tasks.push(tryAnimeKai(animeId));
+  console.log(`🎬 [STREAM] Resolving: rawId="${rawId}" → animeId="${animeId}", ep=${episodeNum} via Aniwatch`);
 
   try {
-    const results = await Promise.allSettled(tasks);
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value?.url) {
-        console.log(`✅ [STREAM] Resolved source for ${rawId}`);
-        return res.status(200).json(r.value);
-      }
-    }
+    const streamData = await tryAniwatch(animeId, episodeNum);
+    console.log(`✅ [STREAM] Resolved source for ${rawId} from Aniwatch`);
+    return res.status(200).json(streamData);
   } catch (e) {
-    console.warn(`⚠️ [STREAM] Parallel provider resolution failed: ${e.message}`);
+    console.warn(`⚠️ [STREAM] Aniwatch resolution failed: ${e.message}`);
   }
 
-  // Instant Fallback return (< 1.2s total latency guaranteed)
+  // Fallback return if Aniwatch fails
   return res.status(200).json({
     episodeId:   rawId,
     timestamp:   Date.now(),

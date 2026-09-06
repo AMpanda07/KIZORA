@@ -10,7 +10,7 @@ const watchHistorySchema = new mongoose.Schema(
     episodeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Episode',
-      required: true
+      required: false
     },
     progressSeconds: {
       type: Number,
@@ -47,13 +47,36 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required']
     },
+    profilePhoto: {
+      type: String,
+      default: ''
+    },
+    preferences: {
+      mediaSource: { type: String, default: 'consumet' },
+      adultContent: { type: Boolean, default: false },
+      subtitles: { type: String, default: 'sub' }
+    },
+    bookmarkedMedias: [{
+      mediaId: { type: String, required: true },
+      title: String,
+      coverArt: String,
+      status: { type: String, enum: ['Completed', 'Dropped', 'Planning', 'Watching'], default: 'Planning' }
+    }],
     watchlist: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Anime'
       }
     ],
-    watchHistory: [watchHistorySchema]
+    watchHistory: [watchHistorySchema],
+    anilistId: {
+      type: String,
+      default: null
+    },
+    anilistAccessToken: {
+      type: String,
+      default: null
+    }
   },
   {
     timestamps: true

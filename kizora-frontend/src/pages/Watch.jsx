@@ -160,16 +160,9 @@ const Watch = () => {
         const matched = epsRes.value.find(e => e._id === episodeId) || epsRes.value[0];
         setCurrentEpisode(matched || null);
       } else {
-        // Generate placeholder episodes
-        const placeholders = Array.from({ length: 12 }, (_, i) => ({
-          _id: `${animeId}-ep-${i + 1}`,
-          episodeNumber: i + 1,
-          title: `Episode ${i + 1}`,
-          duration: '24:00',
-          thumbnail: FALLBACK_THUMBNAIL,
-        }));
-        setEpisodes(placeholders);
-        setCurrentEpisode(placeholders[0]);
+        setEpisodes([]);
+        setCurrentEpisode(null);
+        setStreamError(true);
       }
 
       setLoading(false);
@@ -497,9 +490,17 @@ const Watch = () => {
             >
               {loading
                 ? Array.from({ length: 6 }).map((_, i) => <EpisodeSkeleton key={i} />)
-                : episodes.map(ep => (
-                  <EpisodeItem key={ep._id} ep={ep} activeId={episodeId} />
-                ))
+                : episodes.length > 0 
+                  ? episodes.map(ep => (
+                      <EpisodeItem key={ep._id} ep={ep} activeId={episodeId} />
+                    ))
+                  : (
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
+                      <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
+                      <p>Unable to load episodes for this anime.</p>
+                      <p className="text-xs mt-1">The provider may be down or rate-limited.</p>
+                    </div>
+                  )
               }
             </div>
           </div>

@@ -365,7 +365,7 @@ const Home = () => {
                 {/* Action buttons */}
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => navigate(`/watch/${heroAnime._id || heroAnime.malId || '21'}`)}
+                    onClick={() => navigate(`/watch/${heroAnime._id || heroAnime.malId || '21'}-ep-1`)}
                     className="btn-primary flex items-center gap-2.5 px-7 py-3 rounded-full font-bold text-sm text-white"
                   >
                     <Play className="w-4 h-4 fill-current" />
@@ -494,7 +494,7 @@ const Home = () => {
                   key={anime._id}
                   anime={anime}
                   rank={i + 1}
-                  onClick={() => navigate(`/watch/${anime._id || anime.malId}`)}
+                  onClick={() => navigate(`/watch/${anime._id || anime.malId}-ep-1`)}
                 />
               ))}
             </div>

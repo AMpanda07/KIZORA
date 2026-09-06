@@ -9,7 +9,7 @@ const AnimeCard = ({ anime, variant = 'default' }) => {
   const { _id, malId, title, coverImage, genres, totalEpisodes, status, releaseYear, score } = anime;
 
   const handleClick = () => {
-    navigate(`/watch/${_id || malId || '1'}`);
+    navigate(`/watch/${_id || malId || '1'}-ep-1`);
   };
 
   // ── Compact horizontal variant (for top-ranked sidebar list) ──────────────

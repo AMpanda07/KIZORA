@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
 const connectDB = require('./config/db');
+const authRoutes = require('./routes/auth.routes');
 const streamRoutes = require('./routes/stream.routes');
 const animeRoutes = require('./routes/anime.routes');
 const providerRoutes = require('./routes/provider.routes');
@@ -15,7 +16,7 @@ dotenv.config();
 connectDB();
 
 // Initialize Automated Catalog Sync Cron Job
-initCatalogCron();
+// initCatalogCron();
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use(cors({
 app.use(express.json());
 
 // Routes Registration
+app.use('/api/auth',      authRoutes);      // /api/auth/*
 app.use('/api/stream',    streamRoutes);    // /api/stream/video/:episodeId (range-based local files)
 app.use('/api/anime',     animeRoutes);     // /api/anime (MongoDB catalog)
 app.use('/api/provider',  providerRoutes);  // /api/provider/* (Jikan + stream resolver)
