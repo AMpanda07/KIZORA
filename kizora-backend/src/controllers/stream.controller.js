@@ -25,21 +25,14 @@ const getLiveStreamSources = async (req, res) => {
   try {
     // Attempt to resolve metadata to construct a meaningful embed
     // Because public scraping APIs are currently blocked by Defender/Cloudflare, 
-    // we return an iframe embed format. The frontend will render this instead of ReactPlayer.
+    // and no public iframe APIs support MAL/AniList IDs natively, we cannot safely
+    // construct a working stream URL.
     
-    // In a real production environment, you would map animeId -> TMDB/IMDB or use a dedicated anime embed like Aniwave/Vidsrc
-    // For now, we will construct a proxy URL. 
-    // Note: If this proxy fails, the data pipeline is still intact.
-    const iframeUrl = `https://autoembed.co/anime/mal/${animeId}/${episodeNum}`;
-
-    return res.status(200).json({
-      episodeId: `${animeId}-ep-${episodeNum}`,
-      timestamp: Date.now(),
-      isIframe: true, // Tell frontend to render an <iframe>
-      url: iframeUrl, // The iframe src
-      sources: [],
-      headers: {},
-      servers: [{ name: 'AutoEmbed Proxy', id: 'autoembed' }],
+    // Returning an explicit error so the frontend granular error state can handle it
+    // gracefully without showing a broken 404 player.
+    return res.status(500).json({
+      error: 'Stream unavailable for this episode',
+      message: 'No supported iframe provider found for this Anime ID format.'
     });
   } catch (e) {
     return res.status(500).json({

@@ -71,10 +71,34 @@ const normalizeAniListAnime = (media) => {
   };
 };
 
-// Try Jikan (MAL)
-const fetchJikanInfo = async (malId) => {
-  const response = await axios.get(`https://api.jikan.moe/v4/anime/${malId}`, { timeout: TIMEOUT });
-  return response.data?.data;
+// Try Jikan (MAL) with Retry Logic
+const fetchJikanWithRetry = async (malId, attempt = 1) => {
+  const MAX_RETRIES = 3;
+  try {
+    console.log(`[JIKAN] Attempt ${attempt}/${MAX_RETRIES}: ${malId}`);
+    const response = await axios.get(`https://api.jikan.moe/v4/anime/${malId}`, { 
+      timeout: TIMEOUT,
+      headers: {
+        'User-Agent': 'curl/8.4.0',
+        'Accept': '*/*'
+      }
+    });
+    console.log(`[JIKAN] Success: ${malId}`);
+    return response.data?.data;
+  } catch (err) {
+    const status = err.response?.status;
+    const isTransient = !status || status === 429 || status === 502 || status === 503 || status === 504;
+    
+    if (isTransient && attempt < MAX_RETRIES) {
+      const waitTime = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+      console.log(`[JIKAN] Received ${status || 'timeout'}, retrying in ${waitTime/1000}s`);
+      await new Promise(res => setTimeout(res, waitTime));
+      return fetchJikanWithRetry(malId, attempt + 1);
+    }
+    
+    console.warn(`[JIKAN] Failed after ${attempt} attempts: ${malId}`);
+    throw err;
+  }
 };
 
 // Normalize Jikan data into KIZORA schema
@@ -112,25 +136,45 @@ const getTitleWithFallback = async (animeId) => {
     
     // Fallback to Jikan
     console.log(`[INFO] Falling back to Jikan for title resolution (using ID ${animeId} as MAL ID)`);
-    const jikanData = await fetchJikanInfo(animeId);
+    const jikanData = await fetchJikanWithRetry(animeId);
     if (!jikanData) throw new Error('Jikan returned no data');
     return jikanData.title_english || jikanData.title;
   }
 };
 
-const getAnimeInfoWithFallback = async (animeId) => {
+// Map to hold in-flight promises to prevent duplicate concurrent requests
+const pendingRequests = new Map();
+
+const _getAnimeInfoWithFallbackInternal = async (animeId) => {
+  console.log(`[METADATA] Fetching metadata: ${animeId}`);
   try {
     const anilistMedia = await fetchAniListInfo(animeId);
     return normalizeAniListAnime(anilistMedia);
   } catch (err) {
-    console.warn(`[WARNING] AniList metadata fetch failed for ID: ${animeId}. Error: ${err.message}`);
-    if (err.response?.data) console.warn('[WARNING] AniList Response:', JSON.stringify(err.response.data));
+    console.warn(`[METADATA] AniList failed: ${err.response?.status || err.message}`);
     
     // Fallback to Jikan
-    console.log(`[INFO] Falling back to Jikan for anime info (using ID ${animeId} as MAL ID)`);
-    const jikanData = await fetchJikanInfo(animeId);
+    console.log(`[METADATA] Falling back to Jikan: ${animeId}`);
+    const jikanData = await fetchJikanWithRetry(animeId);
     if (!jikanData) throw new Error('Jikan returned no data');
     return normalizeJikanAnime(jikanData);
+  }
+};
+
+const getAnimeInfoWithFallback = async (animeId) => {
+  // Deduplication logic
+  if (pendingRequests.has(animeId)) {
+    console.log(`[METADATA] Request already in flight: ${animeId}`);
+    return await pendingRequests.get(animeId);
+  }
+
+  const promise = _getAnimeInfoWithFallbackInternal(animeId);
+  pendingRequests.set(animeId, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingRequests.delete(animeId);
   }
 };
 

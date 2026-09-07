@@ -151,7 +151,7 @@ router.get('/info/:animeId', cacheMiddleware(1800), async (req, res) => {
 
 /**
  * @route   GET /api/provider/episodes/:animeId
- * @desc    Fetch episode list for an anime using Jikan API
+ * @desc    Fetch episode list for an anime using Jikan API (with pagination & retry)
  */
 router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
   try {
@@ -164,10 +164,41 @@ router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
       throw new Error(`Could not resolve MAL ID for ${animeId}`);
     }
 
-    // 2. Fetch episodes from Jikan API using MAL ID
+    // 2. Fetch ALL episodes from Jikan API using MAL ID (Handling Pagination & Rate Limits)
     console.log(`[EPISODES] Step 2: Fetching Jikan episodes for MAL ID: ${info.malId}`);
-    const epsRes = await axios.get(`${JIKAN_BASE_URL}/anime/${info.malId}/episodes`, { timeout: 15000 });
-    const rawEpisodes = epsRes.data?.data || [];
+    
+    let rawEpisodes = [];
+    let page = 1;
+    let hasNextPage = true;
+    let retries = 0;
+    const MAX_RETRIES = 3;
+
+    while (hasNextPage && page <= 10) { // Safety limit: 10 pages (1000 eps)
+      try {
+        const epsRes = await axios.get(`${JIKAN_BASE_URL}/anime/${info.malId}/episodes?page=${page}`, { timeout: 15000 });
+        
+        if (epsRes.data?.data) {
+          rawEpisodes.push(...epsRes.data.data);
+        }
+        
+        hasNextPage = epsRes.data?.pagination?.has_next_page || false;
+        if (hasNextPage) {
+          page++;
+          // Delay to respect Jikan's 3 requests/sec limit
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        retries = 0; // reset retries on success
+      } catch (err) {
+        console.warn(`[EPISODES] Jikan fetch failed for page ${page} (Status: ${err.response?.status || err.message}). Retrying...`);
+        if (retries >= MAX_RETRIES) {
+          console.error(`[EPISODES] Max retries reached for Jikan API.`);
+          break; // Stop fetching more pages, but keep what we have so far
+        }
+        retries++;
+        // Wait longer on 429 Too Many Requests or 504 Gateway Timeout
+        await new Promise(resolve => setTimeout(resolve, 1500 * retries));
+      }
+    }
 
     // Jikan sometimes doesn't have episodes for movies/oneshots. Create a dummy Ep 1 if empty.
     if (rawEpisodes.length === 0) {
@@ -183,13 +214,13 @@ router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
       }]);
     }
 
-    console.log(`[EPISODES] Fetched ${rawEpisodes.length} episodes for MAL ID ${info.malId}`);
+    console.log(`[EPISODES] Fetched ${rawEpisodes.length} total episodes for MAL ID ${info.malId}`);
 
     // 3. Map to our KIZORA schema
     const episodes = rawEpisodes.map(ep => ({
       _id: `${animeId}-ep-${ep.mal_id}`, // bind to AniList ID for frontend routing
       anilistId: animeId,
-      providerEpisodeId: `${info.slug}-episode-${ep.mal_id}`, // Generate a friendly slug for the iframe proxy
+      providerEpisodeId: `${info.slug}-episode-${ep.mal_id}`,
       episodeNumber: ep.mal_id, // Jikan uses mal_id for episode number
       title: ep.title || `Episode ${ep.mal_id}`,
       duration: '24:00',
