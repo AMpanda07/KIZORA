@@ -66,9 +66,21 @@ export const AnimeDetails = () => {
         {/* Sidebar */}
         <div className="space-y-4">
           <img src={anime.coverImage} alt={anime.title} className="w-full rounded border-4 border-kz-bg shadow-lg" />
-          <Button variant="primary" className="w-full" onClick={() => toggleWatchlist(anime)}>
-            <BookmarkPlus size={18} className="mr-2" /> {inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
+          
+          <Link to={`/watch/${anime.id}/1`} className="block">
+            <Button variant="primary" className="w-full bg-kz-primary hover:bg-blue-600 font-bold py-3">
+              <Play size={18} className="mr-2 fill-current" /> Watch Ep 1
+            </Button>
+          </Link>
+
+          <Button 
+            variant="secondary" 
+            className={`w-full ${inWatchlist ? 'border-kz-primary text-kz-primary' : ''}`} 
+            onClick={() => toggleWatchlist(anime)}
+          >
+            <BookmarkPlus size={18} className="mr-2" /> {inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
           </Button>
+
           <div className="bg-kz-surface p-4 rounded border border-kz-border text-sm space-y-2">
             <div className="flex justify-between"><span className="text-kz-muted">Score</span><span className="font-bold flex items-center"><Star size={14} className="text-kz-secondary mr-1"/>{anime.score}</span></div>
             <div className="flex justify-between"><span className="text-kz-muted">Status</span><span className="font-medium">{anime.status}</span></div>

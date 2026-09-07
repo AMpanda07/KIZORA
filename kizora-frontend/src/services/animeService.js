@@ -4,7 +4,9 @@ import {
   fetchRecent, 
   fetchAnimeInfo, 
   fetchEpisodes, 
-  fetchSearchResults 
+  fetchSearchResults,
+  fetchSchedule,
+  fetchGenres
 } from './api';
 
 // Adapter to map old backend properties to the new UI properties
@@ -39,19 +41,21 @@ export const animeService = {
 
   async getEpisodes(id) {
     const data = await fetchEpisodes(id);
-    // map the episodes if needed, otherwise return as-is
     return data;
   },
 
-  async searchAnime(query) {
-    const data = await fetchSearchResults(query);
+  async searchAnime(query, genre = null, type = null) {
+    const data = await fetchSearchResults(query, genre, type);
     return data.map(mapAnimeForUI);
   },
 
-  // Temporarily kept for Schedule page - if Jikan fallback is needed later
   async getSchedule(day) {
-    // For now, return empty or fallback
-    return [];
+    const data = await fetchSchedule(day);
+    return data.map(mapAnimeForUI);
+  },
+
+  async getGenres() {
+    return await fetchGenres();
   },
   
   async getProfile() {

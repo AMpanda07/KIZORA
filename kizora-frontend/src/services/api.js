@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 
 // VITE_API_URL must be set in Vercel dashboard ΓåÆ Environment Variables
 // Local dev: create kizora-frontend/.env.local with VITE_API_URL=http://localhost:5000/api
@@ -255,6 +255,31 @@ export const fetchEpisodeStream = async (animeId, episodeNumber) => {
 export const fetchStreamSources = async (episodeId) => {
   const response = await API.get(`/provider/stream/${episodeId}`);
   return response.data;
+};
+
+/**
+ * Fetch release schedule by day of week
+ */
+export const fetchSchedule = async (day) => {
+  try {
+    const response = await API.get('/provider/schedule', { params: day ? { day } : {} });
+    if (response.data && Array.isArray(response.data)) {
+      return response.data.map((item) => ({
+        ...normalizeAnime(item),
+        airingTime: item.airingTime || '18:00',
+        airingDay: item.airingDay || day || 'Monday',
+        broadcastString: item.broadcastString || '',
+      }));
+    }
+  } catch (err) {
+    console.warn('[API] Schedule fetch failed:', err.message);
+  }
+  return FALLBACK_CATALOG.map((item) => ({
+    ...normalizeAnime(item),
+    airingTime: '18:00',
+    airingDay: day || 'Monday',
+    broadcastString: 'Mondays at 18:00 (JST)',
+  }));
 };
 
 export default API;

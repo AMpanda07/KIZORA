@@ -13,7 +13,14 @@ export const AnimeCard = ({ anime, layout = 'vertical' }) => {
           </div>
         </div>
         <div className="p-4 flex flex-col flex-1">
-          <h3 className="font-bold text-lg line-clamp-2 text-kz-text group-hover:text-kz-primary transition-colors">{anime.title}</h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-bold text-lg line-clamp-2 text-kz-text group-hover:text-kz-primary transition-colors">{anime.title}</h3>
+            {anime.airingTime && (
+              <span className="text-xs font-mono font-bold bg-kz-primary/20 text-kz-primary px-2 py-0.5 rounded border border-kz-primary/30 flex-shrink-0">
+                {anime.airingTime} JST
+              </span>
+            )}
+          </div>
           <div className="flex items-center text-kz-muted text-sm mt-1 mb-2 space-x-3">
             <span className="flex items-center"><Star size={14} className="text-kz-secondary mr-1" /> {anime.score}</span>
             <span>{anime.status}</span>

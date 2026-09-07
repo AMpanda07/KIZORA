@@ -75,10 +75,63 @@ export const Profile = () => {
             <Clock size={32} />
           </div>
           <div>
-            <p className="text-kz-muted text-sm uppercase tracking-wide">Days Watched</p>
-            <p className="text-3xl font-bold">{profile.stats.daysWatched}</p>
+            <p className="text-kz-muted text-sm uppercase tracking-wide">Time Spent</p>
+            <p className="text-3xl font-bold">{profile.stats.daysWatched} days</p>
           </div>
         </div>
+      </div>
+
+      {/* Recently Watched History */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Clock size={20} className="text-kz-primary" /> Recently Watched
+          </h2>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="bg-kz-surface p-6 rounded border border-kz-border text-center text-kz-muted">
+            No watch history yet. Start watching anime to track your progress!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {history.map((item) => (
+              <a
+                key={item.animeId}
+                href={`/watch/${item.animeId}/${item.episodeNumber}`}
+                className="bg-kz-surface p-3 rounded border border-kz-border hover:border-kz-primary transition-colors flex gap-3 group"
+              >
+                <img
+                  src={item.poster}
+                  alt={item.animeTitle}
+                  className="w-16 h-22 object-cover rounded flex-shrink-0 bg-kz-bg"
+                />
+                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-sm text-kz-text truncate group-hover:text-kz-primary">
+                      {item.animeTitle}
+                    </h4>
+                    <p className="text-xs text-kz-muted mt-1">
+                      Episode {item.episodeNumber}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 mt-2">
+                    <div className="w-full h-1.5 bg-kz-card rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-kz-primary rounded-full"
+                        style={{ width: `${item.progress || 0}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-[10px] text-kz-muted text-right">
+                      {item.progress || 0}% completed
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

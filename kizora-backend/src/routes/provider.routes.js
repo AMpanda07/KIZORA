@@ -94,6 +94,36 @@ router.get('/recent', cacheMiddleware(900), async (req, res) => {
 });
 
 /**
+ * @route   GET /api/provider/schedule
+ * @desc    Fetch weekly anime release schedule (Cached 1 hr)
+ */
+router.get('/schedule', cacheMiddleware(3600), async (req, res) => {
+  try {
+    const { day } = req.query;
+    let url = `${JIKAN_BASE_URL}/schedules`;
+    if (day) {
+      url += `?filter=${encodeURIComponent(day.toLowerCase())}`;
+    }
+    const response = await axios.get(url, { timeout: 8000 });
+    const normalizedList = (response.data.data || []).map(item => ({
+      ...normalizeAnime(item),
+      airingTime: item.broadcast?.time || 'TBA',
+      airingDay: item.broadcast?.day || day || 'Unknown',
+      broadcastString: item.broadcast?.string || ''
+    }));
+    return res.status(200).json(normalizedList);
+  } catch (error) {
+    console.error(`Schedule API error: ${error.message}`);
+    return res.status(200).json(STATIC_FALLBACK.map(item => ({
+      ...item,
+      airingTime: '18:00',
+      airingDay: req.query.day || 'Monday',
+      broadcastString: 'Mondays at 18:00 (JST)'
+    })));
+  }
+});
+
+/**
  * @route   GET /api/provider/genres
  * @desc    Fetch genre list (Cached 24 hrs)
  */

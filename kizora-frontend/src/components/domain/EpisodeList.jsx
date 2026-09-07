@@ -11,8 +11,8 @@ export const EpisodeList = ({ episodes, animeId }) => {
     <div className="space-y-2">
       {episodes.map((ep) => (
         <Link 
-          key={ep.id}
-          to={`/watch/${animeId}/${ep.id}`}
+          key={ep.id || ep.number}
+          to={`/watch/${animeId}/${ep.number || ep.episodeNumber || ep.id || 1}`}
           className="flex items-center justify-between p-3 bg-kz-surface rounded hover:bg-kz-card transition-colors border border-transparent hover:border-kz-primary group"
         >
           <div className="flex items-center space-x-4">
