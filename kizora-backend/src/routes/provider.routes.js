@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { cacheMiddleware } = require('../middleware/cache');
+const { getTitleWithFallback, getAnimeInfoWithFallback } = require('../utils/metadata');
 const { getLiveStreamSources } = require('../controllers/stream.controller');
 
 const router = express.Router();
@@ -43,6 +44,8 @@ const normalizeAnime = (item) => {
     type: item.type || 'TV'
   };
 };
+
+// Route constants above...
 
 /**
  * @route   GET /api/provider/spotlight
@@ -132,63 +135,71 @@ router.get('/search', cacheMiddleware(300), async (req, res) => {
 
 /**
  * @route   GET /api/provider/info/:animeId
- * @desc    Fetch anime details by ID
+ * @desc    Fetch anime details by ID (using AniList GraphQL)
  */
 router.get('/info/:animeId', cacheMiddleware(1800), async (req, res) => {
   try {
     const { animeId } = req.params;
-    const response = await axios.get(`${JIKAN_BASE_URL}/anime/${animeId}`);
-    const normalized = normalizeAnime(response.data.data);
+    console.log(`[ANIME] Fetching info for ID: ${animeId}`);
+    const normalized = await getAnimeInfoWithFallback(animeId);
     return res.status(200).json(normalized);
   } catch (error) {
-    console.error(`Anime Info API error: ${error.message}`);
-    return res.status(500).json({ message: 'Error fetching anime info' });
+    console.error(`[ERROR] Anime Info API error: ${error.message}`);
+    return res.status(500).json({ error: 'Unable to load anime information', message: error.message });
   }
 });
 
 /**
  * @route   GET /api/provider/episodes/:animeId
- * @desc    Fetch episode list for an anime directly from Aniwatch
+ * @desc    Fetch episode list for an anime using Jikan API
  */
 router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
   try {
-    const { animeId } = req.params;
-    const ANIWATCH_BASE = process.env.ANIWATCH_API_URL || 'https://aniwatch-api-v1-0.onrender.com';
-    const FAST_TIMEOUT = 30000;
+    const { animeId } = req.params; // This is the AniList ID
 
-    // 1. Fetch title from Jikan using MAL ID
-    const jikanRes = await axios.get(`${JIKAN_BASE_URL}/anime/${animeId}`, { timeout: FAST_TIMEOUT });
-    const title = jikanRes.data?.data?.title_english || jikanRes.data?.data?.title;
-    if (!title) throw new Error('Could not find anime title for ID: ' + animeId);
+    // 1. Get Anime info to resolve the MAL ID
+    console.log(`[EPISODES] Step 1: Fetching info for ID: ${animeId}`);
+    const info = await getAnimeInfoWithFallback(animeId);
+    if (!info || !info.malId) {
+      throw new Error(`Could not resolve MAL ID for ${animeId}`);
+    }
 
-    // 2. Search Aniwatch for the title to get the slug
-    const searchRes = await axios.get(`${ANIWATCH_BASE}/api/v2/hianime/search?q=${encodeURIComponent(title)}`, { timeout: FAST_TIMEOUT });
-    const animes = searchRes.data?.data?.animes || [];
-    if (animes.length === 0) throw new Error('No Aniwatch results for ' + title);
-    
-    const aniwatchId = animes[0].id; // e.g., 'one-piece-100'
+    // 2. Fetch episodes from Jikan API using MAL ID
+    console.log(`[EPISODES] Step 2: Fetching Jikan episodes for MAL ID: ${info.malId}`);
+    const epsRes = await axios.get(`${JIKAN_BASE_URL}/anime/${info.malId}/episodes`, { timeout: 15000 });
+    const rawEpisodes = epsRes.data?.data || [];
 
-    // 3. Fetch episodes for this Aniwatch ID
-    const epsRes = await axios.get(`${ANIWATCH_BASE}/api/v2/hianime/anime/${aniwatchId}/episodes`, { timeout: FAST_TIMEOUT });
-    const rawEpisodes = epsRes.data?.data?.episodes || [];
+    // Jikan sometimes doesn't have episodes for movies/oneshots. Create a dummy Ep 1 if empty.
+    if (rawEpisodes.length === 0) {
+      console.log(`[EPISODES] No episodes found on Jikan, generating fallback Episode 1`);
+      return res.status(200).json([{
+        _id: `${animeId}-ep-1`,
+        anilistId: animeId,
+        providerEpisodeId: `${info.slug}-episode-1`,
+        episodeNumber: 1,
+        title: `Episode 1`,
+        duration: '24:00',
+        thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop'
+      }]);
+    }
 
-    if (rawEpisodes.length === 0) throw new Error('No episodes found on Aniwatch');
+    console.log(`[EPISODES] Fetched ${rawEpisodes.length} episodes for MAL ID ${info.malId}`);
 
-    // 4. Map to our KIZORA schema
+    // 3. Map to our KIZORA schema
     const episodes = rawEpisodes.map(ep => ({
-      _id: `${animeId}-ep-${ep.number}`, // bind to MAL ID for frontend routing
-      malId: animeId,
-      episodeNumber: parseInt(ep.number),
-      title: ep.title || `Episode ${ep.number}`,
-      duration: '24:00', // Aniwatch might not return duration in the list
+      _id: `${animeId}-ep-${ep.mal_id}`, // bind to AniList ID for frontend routing
+      anilistId: animeId,
+      providerEpisodeId: `${info.slug}-episode-${ep.mal_id}`, // Generate a friendly slug for the iframe proxy
+      episodeNumber: ep.mal_id, // Jikan uses mal_id for episode number
+      title: ep.title || `Episode ${ep.mal_id}`,
+      duration: '24:00',
       thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop'
     }));
 
     return res.status(200).json(episodes);
   } catch (error) {
-    console.error(`Episodes API error: ${error.message}`);
-    // DO NOT return mock fallbacks! Return a real error so the frontend knows.
-    return res.status(500).json({ error: 'Failed to fetch episodes', message: error.message });
+    console.error(`[ERROR] Stage: episode-list-fetch | Reason: ${error.message}`);
+    return res.status(500).json({ error: 'Unable to load episode list', message: error.message });
   }
 });
 

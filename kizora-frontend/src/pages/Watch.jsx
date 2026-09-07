@@ -9,10 +9,7 @@ import {
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const FALLBACK_STREAM = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
-
-const FALLBACK_THUMBNAIL =
-  'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop';
+const FALLBACK_THUMBNAIL = 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop';
 
 // ─── Skeleton loaders ─────────────────────────────────────────────────────────
 const PlayerSkeleton = () => (
@@ -115,6 +112,10 @@ const Watch = () => {
   const [episodes,        setEpisodes]        = useState([]);
   const [currentEpisode,  setCurrentEpisode]  = useState(null);
   const [loading,         setLoading]         = useState(true);
+  
+  // Discrete Error States
+  const [animeError,      setAnimeError]      = useState(false);
+  const [episodesError,   setEpisodesError]   = useState(false);
   const [streamError,     setStreamError]     = useState(false);
 
   // ── Fetch all data whenever the URL id changes ─────────────────────────────
@@ -124,6 +125,8 @@ const Watch = () => {
 
     const load = async () => {
       setLoading(true);
+      setAnimeError(false);
+      setEpisodesError(false);
       setStreamError(false);
 
       // Decompose compound IDs like "21-ep-3" → animeId = "21"
@@ -139,19 +142,34 @@ const Watch = () => {
       if (!mounted) return;
 
       // ── Stream sources ──
-      if (streamRes.status === 'fulfilled' && streamRes.value?.sources?.length) {
-        setStreamSources(streamRes.value.sources);
-        setServers(streamRes.value.servers || []);
-        setStreamError(false);
+      if (streamRes.status === 'fulfilled' && streamRes.value) {
+        const streamData = streamRes.value;
+        if (streamData.isIframe && streamData.url) {
+          // Iframe payload
+          setStreamSources([{ url: streamData.url, isIframe: true }]);
+          setServers(streamData.servers || []);
+          setStreamError(false);
+        } else if (streamData.sources?.length) {
+          // Native video payload (.m3u8)
+          setStreamSources(streamData.sources);
+          setServers(streamData.servers || []);
+          setStreamError(false);
+        } else {
+          setStreamSources([]);
+          setStreamError(true);
+        }
       } else {
-        // Use reliable test stream as fallback
-        setStreamSources([{ url: FALLBACK_STREAM, quality: 'Auto HLS', isHLS: true }]);
-        setStreamError(false); // fallback is valid
+        setStreamSources([]);
+        setStreamError(true);
       }
 
       // ── Anime metadata ──
       if (infoRes.status === 'fulfilled' && infoRes.value) {
         setAnimeInfo(infoRes.value);
+        setAnimeError(false);
+      } else {
+        setAnimeInfo(null);
+        setAnimeError(true);
       }
 
       // ── Episode list ──
@@ -159,10 +177,11 @@ const Watch = () => {
         setEpisodes(epsRes.value);
         const matched = epsRes.value.find(e => e._id === episodeId) || epsRes.value[0];
         setCurrentEpisode(matched || null);
+        setEpisodesError(false);
       } else {
         setEpisodes([]);
         setCurrentEpisode(null);
-        setStreamError(true);
+        setEpisodesError(true);
       }
 
       setLoading(false);
@@ -173,13 +192,11 @@ const Watch = () => {
   }, [episodeId]);
 
   // Resolve the stream URL to feed into the player
-  const activeStreamUrl = streamError
-    ? null
-    : (streamSources.length > 0 ? streamSources[0].url : FALLBACK_STREAM);
+  const activeStreamUrl = streamSources.length > 0 ? streamSources[0].url : null;
 
   // Helpers
   const animeId    = (episodeId || '21').split('-ep-')[0];
-  const animeTitle = animeInfo?.title || currentEpisode?.animeTitle || 'KIZORA Anime';
+  const animeTitle = animeInfo?.title || currentEpisode?.animeTitle || 'Loading...';
   const synopsis   = animeInfo?.synopsis || 'No synopsis available.';
 
   // ── Badge label for stream type ──
@@ -281,20 +298,29 @@ const Watch = () => {
                 <div className="text-center">
                   <h3 className="text-lg font-bold text-white mb-1">Stream Unavailable</h3>
                   <p className="text-sm" style={{ color: '#7B6EA8' }}>
-                    The stream for this episode is currently unavailable.
+                    The stream for this episode is currently unavailable or the provider timed out.
                   </p>
                 </div>
-                <button
-                  onClick={() => { setStreamError(false); setStreamSources([{ url: FALLBACK_STREAM, quality: 'Auto HLS', isHLS: true }]); }}
-                  className="px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-200"
-                  style={{
-                    background: 'linear-gradient(135deg, #7C3AED, #C026D3)',
-                    color: '#fff',
-                    boxShadow: '0 0 20px rgba(124,58,237,0.5)',
-                  }}
-                >
-                  Try Fallback Stream
-                </button>
+              </div>
+            ) : streamSources[0]?.isIframe ? (
+              <div 
+                className="w-full overflow-hidden rounded-2xl relative"
+                style={{
+                  aspectRatio: '16/9',
+                  border: '1px solid rgba(124,58,237,0.2)',
+                  boxShadow: '0 0 40px -8px rgba(124,58,237,0.5)',
+                  background: '#000'
+                }}
+              >
+                <iframe
+                  src={activeStreamUrl}
+                  width="100%"
+                  height="100%"
+                  frameBorder="0"
+                  allowFullScreen
+                  title={animeTitle}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                ></iframe>
               </div>
             ) : (
               <VideoPlayer
@@ -379,6 +405,10 @@ const Watch = () => {
                   <div className="skeleton h-3.5 rounded" style={{ width: '92%' }} />
                   <div className="skeleton h-3.5 rounded" style={{ width: '78%' }} />
                 </div>
+              ) : animeError ? (
+                <p className="text-sm leading-relaxed mb-5" style={{ color: '#EF4444' }}>
+                  Unable to load anime information.
+                </p>
               ) : (
                 <p className="text-sm leading-relaxed mb-5 line-clamp-3" style={{ color: '#A1A1AA' }}>
                   {synopsis}
@@ -488,20 +518,23 @@ const Watch = () => {
               className="flex flex-col gap-2 p-3 overflow-y-auto af-scrollbar"
               style={{ flex: 1, minHeight: 0 }}
             >
-              {loading
-                ? Array.from({ length: 6 }).map((_, i) => <EpisodeSkeleton key={i} />)
-                : episodes.length > 0 
-                  ? episodes.map(ep => (
-                      <EpisodeItem key={ep._id} ep={ep} activeId={episodeId} />
-                    ))
-                  : (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
-                      <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
-                      <p>Unable to load episodes for this anime.</p>
-                      <p className="text-xs mt-1">The provider may be down or rate-limited.</p>
-                    </div>
-                  )
-              }
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => <EpisodeSkeleton key={i} />)
+              ) : episodesError ? (
+                <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
+                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
+                  <p>Unable to load episode list.</p>
+                </div>
+              ) : episodes.length > 0 ? (
+                episodes.map(ep => (
+                  <EpisodeItem key={ep._id} ep={ep} activeId={episodeId} />
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
+                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
+                  <p>No episodes found.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
