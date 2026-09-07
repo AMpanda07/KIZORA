@@ -31,11 +31,11 @@ const normalizeAnime = (item) => {
     malId: item.mal_id,
     title: item.title_english || item.title || 'Untitled Anime',
     japaneseTitle: item.title_japanese || item.title,
-    slug: item.title ? item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : 'anime',
     synopsis: item.synopsis || 'No synopsis available for this title.',
     coverImage: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop',
     bannerImage: item.trailer?.images?.maximum_image_url || item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1600&auto=format&fit=crop',
     genres: item.genres ? item.genres.map(g => g.name) : ['Action', 'Fantasy'],
+    synonyms: item.title_synonyms || [],
     totalEpisodes: item.episodes || 24,
     status: item.status === 'Currently Airing' ? 'Ongoing' : (item.status === 'Finished Airing' ? 'Completed' : 'Upcoming'),
     releaseYear: item.year || (item.aired?.from ? new Date(item.aired.from).getFullYear() : 2024),
@@ -151,80 +151,45 @@ router.get('/info/:animeId', cacheMiddleware(1800), async (req, res) => {
 
 /**
  * @route   GET /api/provider/episodes/:animeId
- * @desc    Fetch episode list for an anime using Jikan API (with pagination & retry)
+ * @desc    Fetch episode list dynamically mapped from MAL to Provider
  */
 router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
   try {
-    const { animeId } = req.params; // This is the AniList ID
+    const { animeId } = req.params; // KIZORA/AniList/MAL ID
 
-    // 1. Get Anime info to resolve the MAL ID
+    // 1. Get Anime info to resolve metadata (Title, Synonyms)
     console.log(`[EPISODES] Step 1: Fetching info for ID: ${animeId}`);
     const info = await getAnimeInfoWithFallback(animeId);
-    if (!info || !info.malId) {
-      throw new Error(`Could not resolve MAL ID for ${animeId}`);
+    if (!info || !info.title) {
+      throw new Error(`Could not resolve metadata for ${animeId}`);
     }
 
-    // 2. Fetch ALL episodes from Jikan API using MAL ID (Handling Pagination & Rate Limits)
-    console.log(`[EPISODES] Step 2: Fetching Jikan episodes for MAL ID: ${info.malId}`);
+    // 2. Search Provider
+    const { searchProviderAnime, getProviderEpisodes } = require('../services/provider.service');
+    const providerAnimeId = await searchProviderAnime(info.title, info.japaneseTitle, info.synonyms);
     
-    let rawEpisodes = [];
-    let page = 1;
-    let hasNextPage = true;
-    let retries = 0;
-    const MAX_RETRIES = 3;
-
-    while (hasNextPage && page <= 10) { // Safety limit: 10 pages (1000 eps)
-      try {
-        const epsRes = await axios.get(`${JIKAN_BASE_URL}/anime/${info.malId}/episodes?page=${page}`, { timeout: 15000 });
-        
-        if (epsRes.data?.data) {
-          rawEpisodes.push(...epsRes.data.data);
-        }
-        
-        hasNextPage = epsRes.data?.pagination?.has_next_page || false;
-        if (hasNextPage) {
-          page++;
-          // Delay to respect Jikan's 3 requests/sec limit
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        retries = 0; // reset retries on success
-      } catch (err) {
-        console.warn(`[EPISODES] Jikan fetch failed for page ${page} (Status: ${err.response?.status || err.message}). Retrying...`);
-        if (retries >= MAX_RETRIES) {
-          console.error(`[EPISODES] Max retries reached for Jikan API.`);
-          break; // Stop fetching more pages, but keep what we have so far
-        }
-        retries++;
-        // Wait longer on 429 Too Many Requests or 504 Gateway Timeout
-        await new Promise(resolve => setTimeout(resolve, 1500 * retries));
-      }
+    if (!providerAnimeId) {
+      throw new Error(`Provider anime not found for title: ${info.title}`);
     }
 
-    // Jikan sometimes doesn't have episodes for movies/oneshots. Create a dummy Ep 1 if empty.
-    if (rawEpisodes.length === 0) {
-      console.log(`[EPISODES] No episodes found on Jikan, generating fallback Episode 1`);
-      return res.status(200).json([{
-        _id: `${animeId}-ep-1`,
-        anilistId: animeId,
-        providerEpisodeId: `${info.slug}-episode-1`,
-        episodeNumber: 1,
-        title: `Episode 1`,
-        duration: '24:00',
-        thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop'
-      }]);
+    // 3. Fetch Provider Episodes
+    const providerEps = await getProviderEpisodes(providerAnimeId);
+    if (providerEps.length === 0) {
+      throw new Error(`Provider episode list empty for: ${providerAnimeId}`);
     }
 
-    console.log(`[EPISODES] Fetched ${rawEpisodes.length} total episodes for MAL ID ${info.malId}`);
+    // 4. Map to KIZORA schema
+    // Fallback thumbnail: use anime's cover or banner image, NEVER the hardcoded red placeholder
+    const fallbackThumb = info.bannerImage || info.coverImage || '';
 
-    // 3. Map to our KIZORA schema
-    const episodes = rawEpisodes.map(ep => ({
-      _id: `${animeId}-ep-${ep.mal_id}`, // bind to AniList ID for frontend routing
+    const episodes = providerEps.map(ep => ({
+      _id: `${animeId}-ep-${ep.number}`, // KIZORA routing ID
       anilistId: animeId,
-      providerEpisodeId: `${info.slug}-episode-${ep.mal_id}`,
-      episodeNumber: ep.mal_id, // Jikan uses mal_id for episode number
-      title: ep.title || `Episode ${ep.mal_id}`,
-      duration: '24:00',
-      thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop'
+      providerEpisodeId: ep.id,          // EXACT provider ID (e.g. one-piece-episode-1)
+      episodeNumber: ep.number,
+      title: ep.title || `Episode ${ep.number}`,
+      duration: '24:00', // We don't get duration from this API
+      thumbnail: fallbackThumb
     }));
 
     return res.status(200).json(episodes);

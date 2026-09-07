@@ -110,6 +110,7 @@ const normalizeJikanAnime = (item) => {
     malId: item.mal_id,
     title: item.title_english || item.title || 'Untitled Anime',
     japaneseTitle: item.title_japanese || item.title,
+    synonyms: item.title_synonyms || [],
     slug: (item.title_english || item.title || 'anime').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
     synopsis: item.synopsis || 'No synopsis available.',
     coverImage: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url,

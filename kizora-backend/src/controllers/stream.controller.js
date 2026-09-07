@@ -19,22 +19,49 @@ const getLiveStreamSources = async (req, res) => {
   }
 
   const compoundMatch = rawId.match(/^(\d+)-ep-(\d+)$/);
-  const animeId    = compoundMatch ? compoundMatch[1] : rawId; // This is the AniList or MAL ID
+  const animeId    = compoundMatch ? compoundMatch[1] : rawId; // KIZORA / MAL ID
   const episodeNum = compoundMatch ? parseInt(compoundMatch[2], 10) : 1;
 
   try {
-    // Attempt to resolve metadata to construct a meaningful embed
-    // Because public scraping APIs are currently blocked by Defender/Cloudflare, 
-    // and no public iframe APIs support MAL/AniList IDs natively, we cannot safely
-    // construct a working stream URL.
+    // 1. Get Anime info to resolve metadata
+    const info = await getAnimeInfoWithFallback(animeId);
+    if (!info || !info.title) {
+      throw new Error(`Could not resolve metadata for ${animeId}`);
+    }
+
+    // 2. Search Provider
+    const { searchProviderAnime, getProviderEpisodes, getProviderStream } = require('../services/provider.service');
+    const providerAnimeId = await searchProviderAnime(info.title, info.japaneseTitle, info.synonyms);
     
-    // Returning an explicit error so the frontend granular error state can handle it
-    // gracefully without showing a broken 404 player.
-    return res.status(500).json({
-      error: 'Stream unavailable for this episode',
-      message: 'No supported iframe provider found for this Anime ID format.'
+    if (!providerAnimeId) {
+      throw new Error(`Provider anime not found for title: ${info.title}`);
+    }
+
+    // 3. Fetch Provider Episodes
+    const providerEps = await getProviderEpisodes(providerAnimeId);
+    if (providerEps.length === 0) {
+      throw new Error(`Provider episode list empty for: ${providerAnimeId}`);
+    }
+
+    // 4. Find matching episode
+    const targetEp = providerEps.find(ep => ep.number === episodeNum);
+    if (!targetEp) {
+      throw new Error(`Episode ${episodeNum} not found in provider list`);
+    }
+
+    // 5. Fetch stream sources
+    const streamInfo = await getProviderStream(targetEp.id);
+
+    return res.status(200).json({
+      success: true,
+      url: streamInfo.url,
+      isIframe: streamInfo.type === 'iframe',
+      sources: streamInfo.type === 'hls' ? [{ url: streamInfo.url, isM3U8: true }] : [],
+      servers: []
     });
+
   } catch (e) {
+    console.error(`[STREAM] Error: ${e.message}`);
     return res.status(500).json({
       error: 'Stream unavailable for this episode',
       message: e.message
