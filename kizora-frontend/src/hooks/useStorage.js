@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 
 const WATCHLIST_KEY = 'kizora_watchlist';
 const HISTORY_KEY = 'kizora_watch_history';

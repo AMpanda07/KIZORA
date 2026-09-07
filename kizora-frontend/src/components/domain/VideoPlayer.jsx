@@ -19,6 +19,7 @@ const VideoPlayer = ({
   title,
   sources = [],    // [{url, quality, isHLS}] — extra quality options
   servers = [],    // [{name, id}] — server labels
+  onTimeUpdate,    // Callback for progress
 }) => {
   // Resolve the URL from either prop
   const resolvedUrl = videoUrl || src || '';
@@ -208,7 +209,12 @@ const VideoPlayer = ({
         ref={videoRef}
         poster={poster}
         onClick={togglePlay}
-        onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
+        onTimeUpdate={() => {
+          const t = videoRef.current?.currentTime || 0;
+          const d = videoRef.current?.duration || 0;
+          setCurrentTime(t);
+          if (onTimeUpdate) onTimeUpdate(t, d);
+        }}
         onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -423,4 +429,4 @@ const VideoPlayer = ({
   );
 };
 
-export default VideoPlayer;
+export { VideoPlayer };

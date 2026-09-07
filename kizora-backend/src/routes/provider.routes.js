@@ -118,11 +118,14 @@ router.get('/genres', cacheMiddleware(86400), async (req, res) => {
  */
 router.get('/search', cacheMiddleware(300), async (req, res) => {
   try {
-    const { q, genre, type } = req.query;
-    let url = `${JIKAN_BASE_URL}/anime?limit=20`;
+    const { q, genre, type, page, limit, status, order_by, sort } = req.query;
+    let url = `${JIKAN_BASE_URL}/anime?limit=${limit || 24}`;
+    if (page) url += `&page=${page}`;
     if (q) url += `&q=${encodeURIComponent(q)}`;
     if (genre) url += `&genres=${genre}`;
     if (type) url += `&type=${type}`;
+    if (status) url += `&status=${status}`;
+    if (order_by) url += `&order_by=${order_by}&sort=${sort || 'desc'}`;
 
     const response = await axios.get(url);
     const normalizedList = (response.data.data || []).map(normalizeAnime);

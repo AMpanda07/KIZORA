@@ -1,6 +1,6 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
-// VITE_API_URL must be set in Vercel dashboard → Environment Variables
+// VITE_API_URL must be set in Vercel dashboard ΓåÆ Environment Variables
 // Local dev: create kizora-frontend/.env.local with VITE_API_URL=http://localhost:5000/api
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -259,7 +259,7 @@ export const fetchStreamSources = async (episodeId) => {
 
 export default API;
 
-// ─── Static fallback catalog ─────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇ Static fallback catalog ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const FALLBACK_CATALOG = [
   {
     _id: '21',

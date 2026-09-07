@@ -1,185 +1,85 @@
-import React, { useState } from 'react';
-import { User, Bookmark, Clock, Film, Calendar, ShieldCheck } from 'lucide-react';
-import { useWatchlist, useWatchHistory } from '../hooks/useStorage';
-import AnimeCard from '../components/AnimeCard';
+import React, { useEffect, useState } from 'react';
+import { animeService } from '../services/animeService';
+import { Settings, Clock, MonitorPlay } from 'lucide-react';
+import { Button } from '../components/common/Button';
+import { Skeleton } from '../components/common/Skeleton';
+import { ErrorState } from '../components/common/ErrorState';
+import { useWatchHistory } from '../hooks/useStorage';
 
-const Profile = () => {
-  const { watchlist } = useWatchlist();
+export const Profile = () => {
+
   const { history } = useWatchHistory();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const uniqueAnimeWatched = new Set(history.map((h) => h.animeId)).size;
-  const totalEpisodesWatched = history.length;
+  useEffect(() => {
+    // Generate a local mock profile from history stats
+    const totalEpisodesWatched = history.length;
+    const daysWatched = ((totalEpisodesWatched * 24) / (60 * 24)).toFixed(1);
+    
+    setProfile({
+      name: 'KIZORA Viewer',
+      avatar: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&q=80',
+      joined: 'Today',
+      stats: {
+        episodesWatched: totalEpisodesWatched,
+        daysWatched: daysWatched
+      }
+    });
+    setLoading(false);
+  }, [history]);
+
+  // No error handling needed for local mock
+  // if (error) return <ErrorState message={error} />;
+  
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-8">
+        <Skeleton className="h-48 w-full" />
+        <div className="flex gap-4">
+          <Skeleton className="h-32 w-1/3" />
+          <Skeleton className="h-32 w-1/3" />
+          <Skeleton className="h-32 w-1/3" />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
-      {/* ── Profile Header ────────────────────────────────────── */}
-      <div className="p-6 sm:p-8 rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] mb-8 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
-        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] flex items-center justify-center text-[var(--accent-hover)] shadow-lg flex-shrink-0">
-          <User className="w-10 h-10" />
+    <div className="max-w-4xl mx-auto space-y-8">
+      {/* Profile Header */}
+      <div className="bg-kz-surface rounded-lg p-8 flex flex-col md:flex-row items-center border border-kz-border">
+        <img src={profile.avatar} alt={profile.name} className="w-32 h-32 rounded-full mb-4 md:mb-0 md:mr-8 border-4 border-kz-primary" />
+        <div className="text-center md:text-left flex-1">
+          <h1 className="text-3xl font-bold mb-2">{profile.name}</h1>
+          <p className="text-kz-muted mb-4">Joined {profile.joined}</p>
         </div>
-
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">
-            KIZORA Viewer
-          </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1 flex items-center justify-center sm:justify-start gap-1.5">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Active Member &bull; Local Profile</span>
-          </p>
-
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-3 gap-3 sm:gap-6 mt-6 max-w-md">
-            <div className="p-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)]">
-              <span className="block text-lg font-bold text-[var(--text-primary)]">
-                {uniqueAnimeWatched}
-              </span>
-              <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-                Anime Watched
-              </span>
-            </div>
-
-            <div className="p-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)]">
-              <span className="block text-lg font-bold text-[var(--text-primary)]">
-                {totalEpisodesWatched}
-              </span>
-              <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-                Episodes
-              </span>
-            </div>
-
-            <div className="p-3 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border)]">
-              <span className="block text-lg font-bold text-[var(--text-primary)]">
-                {watchlist.length}
-              </span>
-              <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-                Watchlist
-              </span>
-            </div>
-          </div>
+        <div className="mt-4 md:mt-0">
+          <Button variant="outline"><Settings size={18} className="mr-2" /> Edit Profile</Button>
         </div>
       </div>
 
-      {/* ── Tabs ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 border-b border-[var(--border)] mb-6">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
-            activeTab === 'overview'
-              ? 'border-[var(--accent-primary)] text-[var(--accent-hover)]'
-              : 'border-transparent text-[var(--text-secondary)] hover:text-white'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab('watchlist')}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
-            activeTab === 'watchlist'
-              ? 'border-[var(--accent-primary)] text-[var(--accent-hover)]'
-              : 'border-transparent text-[var(--text-secondary)] hover:text-white'
-          }`}
-        >
-          Watchlist ({watchlist.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
-            activeTab === 'history'
-              ? 'border-[var(--accent-primary)] text-[var(--accent-hover)]'
-              : 'border-transparent text-[var(--text-secondary)] hover:text-white'
-          }`}
-        >
-          History ({history.length})
-        </button>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="bg-kz-surface p-6 rounded border border-kz-border flex items-center space-x-4">
+          <div className="p-4 bg-kz-primary/10 rounded-full text-kz-primary">
+            <MonitorPlay size={32} />
+          </div>
+          <div>
+            <p className="text-kz-muted text-sm uppercase tracking-wide">Episodes Watched</p>
+            <p className="text-3xl font-bold">{profile.stats.episodesWatched}</p>
+          </div>
+        </div>
+        <div className="bg-kz-surface p-6 rounded border border-kz-border flex items-center space-x-4">
+          <div className="p-4 bg-kz-secondary/10 rounded-full text-kz-secondary">
+            <Clock size={32} />
+          </div>
+          <div>
+            <p className="text-kz-muted text-sm uppercase tracking-wide">Days Watched</p>
+            <p className="text-3xl font-bold">{profile.stats.daysWatched}</p>
+          </div>
+        </div>
       </div>
-
-      {/* Tab Panels */}
-      {activeTab === 'overview' && (
-        <div className="space-y-8">
-          <div>
-            <h3 className="text-sm font-bold text-[var(--text-primary)] mb-3">
-              Recently Watched
-            </h3>
-            {history.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {history.slice(0, 4).map((item) => (
-                  <AnimeCard
-                    key={item.episodeId || item.animeId}
-                    anime={{
-                      _id: item.animeId,
-                      title: item.animeTitle,
-                      coverImage: item.poster,
-                      episodeNumber: item.episodeNumber,
-                      progress: item.progress,
-                      episodeId: item.episodeId,
-                    }}
-                    variant="continue-watching"
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-[var(--text-muted)]">No watch activity yet.</p>
-            )}
-          </div>
-
-          <div>
-            <h3 className="text-sm font-bold text-[var(--text-primary)] mb-3">
-              Saved in Watchlist
-            </h3>
-            {watchlist.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {watchlist.slice(0, 4).map((anime) => (
-                  <AnimeCard key={anime._id || anime.malId} anime={anime} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-[var(--text-muted)]">No titles in watchlist.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'watchlist' && (
-        <div>
-          {watchlist.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {watchlist.map((anime) => (
-                <AnimeCard key={anime._id || anime.malId} anime={anime} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-[var(--text-muted)]">Watchlist is empty.</p>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'history' && (
-        <div>
-          {history.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {history.map((item) => (
-                <AnimeCard
-                  key={item.episodeId || item.animeId}
-                  anime={{
-                    _id: item.animeId,
-                    title: item.animeTitle,
-                    coverImage: item.poster,
-                    episodeNumber: item.episodeNumber,
-                    progress: item.progress,
-                    episodeId: item.episodeId,
-                  }}
-                  variant="continue-watching"
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-[var(--text-muted)]">Watch history is empty.</p>
-          )}
-        </div>
-      )}
     </div>
   );
 };
-
-export default Profile;
