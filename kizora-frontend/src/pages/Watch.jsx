@@ -3,161 +3,119 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchAnimeInfo, fetchEpisodeStream } from '../services/api';
 import VideoPlayer from '../components/VideoPlayer';
 import {
-  Play, Star, Eye, Calendar, Sparkles, Film,
-  Loader2, Server, ArrowLeft, AlertTriangle,
-  Tv, Clock, ChevronRight, ChevronLeft, BookMarked
+  Play,
+  Star,
+  Eye,
+  Calendar,
+  Sparkles,
+  Film,
+  Loader2,
+  Server,
+  ArrowLeft,
+  AlertTriangle,
+  Tv,
+  Clock,
+  ChevronRight,
+  ChevronLeft,
+  Bookmark,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
+import { useWatchlist, useWatchHistory } from '../hooks/useStorage';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const FALLBACK_THUMBNAIL = 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop';
+const FALLBACK_THUMBNAIL =
+  'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop';
 
-// ─── Skeleton loaders ─────────────────────────────────────────────────────────
-const PlayerSkeleton = () => (
-  <div
-    className="w-full skeleton"
-    style={{ aspectRatio: '16/9', borderRadius: '16px', border: '1px solid rgba(124,58,237,0.15)' }}
-  />
-);
-
-const EpisodeSkeleton = () => (
-  <div className="flex gap-3 p-3 rounded-2xl" style={{ background: 'rgba(124,58,237,0.05)' }}>
-    <div className="skeleton flex-shrink-0 rounded-xl" style={{ width: '112px', aspectRatio: '16/9' }} />
-    <div className="flex-1 flex flex-col gap-2 justify-center">
-      <div className="skeleton h-3 rounded" style={{ width: '40%' }} />
-      <div className="skeleton h-3 rounded" style={{ width: '85%' }} />
-    </div>
-  </div>
-);
-
-// ─── Episode List Item ────────────────────────────────────────────────────────
-const EpisodeItem = ({ ep, activeId }) => {
-  const isActive = ep._id === activeId;
+const EpisodeItem = ({ ep, activeId, animeId }) => {
+  const isActive = ep._id === activeId || ep._id === `${animeId}-ep-${ep.episodeNumber}`;
   return (
     <Link
       to={`/watch/${ep._id}`}
-      className="group flex gap-3 p-3 rounded-2xl transition-all duration-200"
-      style={{
-        background: isActive ? 'rgba(124,58,237,0.18)' : 'rgba(124,58,237,0.04)',
-        border: `1px solid ${isActive ? 'rgba(124,58,237,0.45)' : 'rgba(124,58,237,0.1)'}`,
-        backdropFilter: 'blur(12px)',
-      }}
-      onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(124,58,237,0.1)'; e.currentTarget.style.borderColor = 'rgba(124,58,237,0.25)'; } }}
-      onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(124,58,237,0.04)'; e.currentTarget.style.borderColor = 'rgba(124,58,237,0.1)'; } }}
+      className={`group flex items-center gap-3 p-2 rounded-xl transition-colors border ${
+        isActive
+          ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)] text-white'
+          : 'bg-[var(--bg-card)] border-[var(--border)] text-[var(--text-secondary)] hover:text-white hover:border-[var(--border-focus)]'
+      }`}
     >
-      {/* Thumbnail */}
-      <div
-        className="relative flex-shrink-0 overflow-hidden rounded-xl"
-        style={{ width: '112px', aspectRatio: '16/9', background: '#1A1030' }}
-      >
+      <div className="relative flex-shrink-0 w-20 h-12 rounded-lg overflow-hidden bg-[var(--bg-elevated)]">
         <img
           src={ep.thumbnail || FALLBACK_THUMBNAIL}
           alt={ep.title}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-          onError={e => { e.target.src = FALLBACK_THUMBNAIL; }}
+          loading="lazy"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+          onError={(e) => {
+            e.target.src = FALLBACK_THUMBNAIL;
+          }}
         />
-        {/* Play overlay */}
-        <div
-          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-          style={{ background: 'rgba(15,10,30,0.6)' }}
-        >
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
-          >
-            <Play className="w-3.5 h-3.5 text-white fill-current ml-0.5" />
-          </div>
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <Play className="w-3.5 h-3.5 text-white fill-current" />
         </div>
-        {/* Duration badge */}
-        <span
-          className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono"
-          style={{ background: 'rgba(0,0,0,0.8)', color: '#D4D4D8' }}
-        >
-          {ep.duration || '24:00'}
-        </span>
-        {/* Active indicator */}
         {isActive && (
-          <div
-            className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-            style={{ background: 'rgba(124,58,237,0.9)', color: '#fff' }}
-          >
-            Now
-          </div>
+          <span className="absolute bottom-1 right-1 px-1 py-0.2 rounded text-[9px] font-bold bg-[var(--accent-primary)] text-white">
+            NOW
+          </span>
         )}
       </div>
 
-      {/* Info */}
-      <div className="flex flex-col justify-center min-w-0 flex-1 gap-0.5">
-        <span className="text-[11px] font-bold" style={{ color: isActive ? '#C4B5FD' : '#8B5CF6' }}>
+      <div className="flex-1 min-w-0">
+        <span className="text-[11px] font-bold block truncate">
           Episode {ep.episodeNumber}
         </span>
-        <h4
-          className="text-xs font-semibold line-clamp-2 leading-snug transition-colors"
-          style={{ color: isActive ? '#E2D9F3' : '#A1A1AA' }}
-        >
-          {ep.title}
-        </h4>
+        <p className="text-[10px] text-[var(--text-muted)] truncate">
+          {ep.title || `Episode ${ep.episodeNumber}`}
+        </p>
       </div>
     </Link>
   );
 };
 
-// ─── Watch Page ───────────────────────────────────────────────────────────────
 const Watch = () => {
   const { episodeId } = useParams();
   const navigate = useNavigate();
 
-  const [animeInfo,       setAnimeInfo]       = useState(null);
-  const [streamSources,   setStreamSources]   = useState([]);
-  const [servers,         setServers]         = useState([]);
+  const { isInWatchlist, toggleWatchlist } = useWatchlist();
+  const { updateProgress } = useWatchHistory();
+
+  const [animeInfo, setAnimeInfo] = useState(null);
+  const [streamSources, setStreamSources] = useState([]);
+  const [servers, setServers] = useState([]);
   const [selectedServerUrl, setSelectedServerUrl] = useState(null);
   const [activeProviderName, setActiveProviderName] = useState('');
-  const [episodes,        setEpisodes]        = useState([]);
-  const [currentEpisode,  setCurrentEpisode]  = useState(null);
-  const [loading,         setLoading]         = useState(true);
-  
-  // Discrete Error States
-  const [animeError,      setAnimeError]      = useState(false);
-  const [episodesError,   setEpisodesError]   = useState(false);
-  const [streamError,     setStreamError]     = useState(false);
+  const [episodes, setEpisodes] = useState([]);
+  const [currentEpisode, setCurrentEpisode] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // ── Fetch only requested episode stream + metadata (Lazy Resolution) ──────
-  useEffect(() => {
-    if (!episodeId) return;
-    let mounted = true;
+  const [animeError, setAnimeError] = useState(false);
+  const [streamError, setStreamError] = useState(false);
 
-    const load = async () => {
-      setLoading(true);
-      setAnimeError(false);
-      setEpisodesError(false);
-      setStreamError(false);
-      setSelectedServerUrl(null);
-      setActiveProviderName('');
+  // Decompose compound ID
+  const parts = (episodeId || '21-ep-1').split('-ep-');
+  const animeId = parts[0];
+  const epNum = parts[1] ? parseInt(parts[1], 10) : 1;
 
-      // Decompose compound IDs like "21-ep-3" → animeId = "21", episodeNum = 3
-      const parts   = episodeId.split('-ep-');
-      const animeId = parts[0];
-      const epNum   = parts[1] ? parseInt(parts[1], 10) : 1;
+  const loadStreamAndMeta = async () => {
+    setLoading(true);
+    setAnimeError(false);
+    setStreamError(false);
+    setSelectedServerUrl(null);
+    setActiveProviderName('');
 
-      // Parallelize only metadata + requested episode stream (NO full catalog scraping)
+    try {
       const [streamRes, infoRes] = await Promise.allSettled([
         fetchEpisodeStream(animeId, epNum),
         fetchAnimeInfo(animeId),
       ]);
 
-      if (!mounted) return;
-
-      // ── Stream sources ──
+      // Stream sources resolution
       if (streamRes.status === 'fulfilled' && streamRes.value) {
         const streamData = streamRes.value;
         setActiveProviderName(streamData.provider || '');
         if (streamData.isIframe && streamData.url) {
-          // Iframe payload
           setStreamSources([{ url: streamData.url, isIframe: true }]);
           setServers(streamData.servers || []);
           setSelectedServerUrl(streamData.url);
           setStreamError(false);
         } else if (streamData.sources?.length) {
-          // Native video payload (.m3u8)
           setStreamSources(streamData.sources);
           setServers(streamData.servers || []);
           setSelectedServerUrl(streamData.sources[0]?.url || streamData.url);
@@ -171,486 +129,255 @@ const Watch = () => {
         setStreamError(true);
       }
 
-      // ── Anime metadata & Lazy Episode List UI ──
+      // Metadata & episode list resolution
+      let info = null;
       if (infoRes.status === 'fulfilled' && infoRes.value) {
-        const info = infoRes.value;
+        info = infoRes.value;
         setAnimeInfo(info);
-        setAnimeError(false);
-
-        // Build episode list directly from totalEpisodes (0 external provider calls)
-        const total = info.totalEpisodes || 12;
-        const fallbackThumb = info.bannerImage || info.coverImage || FALLBACK_THUMBNAIL;
-        const epList = Array.from({ length: total }, (_, i) => ({
-          _id: `${animeId}-ep-${i + 1}`,
-          episodeNumber: i + 1,
-          title: `Episode ${i + 1}`,
-          thumbnail: fallbackThumb
-        }));
-        setEpisodes(epList);
-        setCurrentEpisode({
-          _id: `${animeId}-ep-${epNum}`,
-          episodeNumber: epNum,
-          title: `Episode ${epNum}`,
-          thumbnail: fallbackThumb
-        });
       } else {
-        setAnimeInfo(null);
         setAnimeError(true);
-
-        // Fallback episode structure
-        const fallbackTotal = 12;
-        const epList = Array.from({ length: fallbackTotal }, (_, i) => ({
-          _id: `${animeId}-ep-${i + 1}`,
-          episodeNumber: i + 1,
-          title: `Episode ${i + 1}`,
-          thumbnail: FALLBACK_THUMBNAIL
-        }));
-        setEpisodes(epList);
-        setCurrentEpisode({
-          _id: `${animeId}-ep-${epNum}`,
-          episodeNumber: epNum,
-          title: `Episode ${epNum}`,
-          thumbnail: FALLBACK_THUMBNAIL
-        });
       }
 
-      setLoading(false);
-    };
+      const total = info?.totalEpisodes || 24;
+      const fallbackThumb = info?.bannerImage || info?.coverImage || FALLBACK_THUMBNAIL;
+      const epList = Array.from({ length: total }, (_, i) => ({
+        _id: `${animeId}-ep-${i + 1}`,
+        episodeNumber: i + 1,
+        title: `Episode ${i + 1}`,
+        thumbnail: fallbackThumb,
+      }));
+      setEpisodes(epList);
 
-    load();
-    return () => { mounted = false; };
+      const activeEp = {
+        _id: `${animeId}-ep-${epNum}`,
+        episodeNumber: epNum,
+        title: `Episode ${epNum}`,
+        thumbnail: fallbackThumb,
+      };
+      setCurrentEpisode(activeEp);
+
+      // Save initial history progress
+      updateProgress({
+        animeId,
+        episodeNumber: epNum,
+        episodeId,
+        animeTitle: info?.title || `Anime ${animeId}`,
+        episodeTitle: `Episode ${epNum}`,
+        poster: info?.coverImage || fallbackThumb,
+        currentTime: 0,
+        duration: 1440,
+      });
+    } catch (err) {
+      console.error('Watch loading error:', err);
+      setStreamError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (episodeId) {
+      loadStreamAndMeta();
+    }
   }, [episodeId]);
 
-  // Resolve the stream URL to feed into the player
-  const activeStreamUrl = selectedServerUrl || (streamSources.length > 0 ? streamSources[0].url : null);
-
-  // Helpers
-  const animeId    = (episodeId || '21').split('-ep-')[0];
-  const animeTitle = animeInfo?.title || currentEpisode?.animeTitle || 'Loading...';
-  const synopsis   = animeInfo?.synopsis || 'No synopsis available.';
-
-  // ── Badge label for stream type ──
-  const streamBadge = activeProviderName ? `Source: ${activeProviderName.toUpperCase()}` : (activeStreamUrl?.includes('.m3u8') ? 'HLS Adaptive Stream' : 'HD Stream');
+  const activeStreamUrl =
+    selectedServerUrl || (streamSources.length > 0 ? streamSources[0].url : null);
+  const animeTitle = animeInfo?.title || `Anime ${animeId}`;
+  const isBookmarked = isInWatchlist(animeId);
 
   return (
-    <div
-      className="min-h-screen text-white"
-      style={{
-        background: '#0F0A1E',
-        paddingLeft: '220px',   /* sidebar offset */
-        paddingTop:  '73px',    /* header offset */
-        paddingBottom: '48px',
-      }}
-    >
-      <div className="max-w-[1400px] mx-auto px-6 py-6">
-
-        {/* ── Breadcrumb / Back bar ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1.5 text-sm font-semibold transition-colors duration-200"
-            style={{ color: '#7B6EA8' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#C4B5FD'}
-            onMouseLeave={e => e.currentTarget.style.color = '#7B6EA8'}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-
-          <ChevronRight className="w-3 h-3" style={{ color: '#4B3E7A' }} />
-
-          <span
-            className="text-sm font-semibold cursor-pointer transition-colors duration-200"
-            style={{ color: '#7B6EA8' }}
-            onClick={() => navigate('/')}
-            onMouseEnter={e => e.currentTarget.style.color = '#C4B5FD'}
-            onMouseLeave={e => e.currentTarget.style.color = '#7B6EA8'}
-          >
-            {animeTitle}
-          </span>
-
-          {currentEpisode && (
-            <>
-              <ChevronRight className="w-3 h-3" style={{ color: '#4B3E7A' }} />
-              <span className="text-sm font-semibold" style={{ color: '#E2D9F3' }}>
-                Episode {currentEpisode.episodeNumber}
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* ── Fetching indicator (toast) ────────────────────────────────────── */}
-        {loading && (
-          <div
-            className="fixed top-[82px] right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full text-xs font-semibold"
-            style={{
-              background: 'rgba(15,10,30,0.9)',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(124,58,237,0.35)',
-              color: '#C4B5FD',
-              boxShadow: '0 0 20px rgba(124,58,237,0.3)',
-            }}
-          >
-            <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8B5CF6' }} />
-            Fetching stream & metadata...
-          </div>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════
-             MAIN GRID: 2fr (video + info) | 1fr (episode list)
-        ════════════════════════════════════════════════════════════════════ */}
-        <div
-          className="grid gap-6"
-          style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
+      {/* ── Breadcrumb bar ────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-4">
+        <button
+          onClick={() => navigate(`/anime/${animeId}`)}
+          className="hover:text-white flex items-center gap-1 transition-colors"
         >
-          {/* ── LEFT COLUMN ─────────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-6">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Anime Details</span>
+        </button>
+        <ChevronRight className="w-3 h-3 text-[var(--text-muted)]" />
+        <span className="text-[var(--text-primary)] font-medium truncate max-w-xs">
+          {animeTitle}
+        </span>
+        <ChevronRight className="w-3 h-3 text-[var(--text-muted)]" />
+        <span className="text-[var(--accent-hover)] font-semibold">
+          Ep {epNum}
+        </span>
+      </div>
 
-            {/* Video player */}
-            {loading ? <PlayerSkeleton /> : streamError ? (
-              /* Error state */
-              <div
-                className="w-full flex flex-col items-center justify-center gap-4 rounded-2xl p-12"
-                style={{
-                  aspectRatio: '16/9',
-                  background: 'rgba(26,16,48,0.8)',
-                  backdropFilter: 'blur(20px)',
-                  border: '1px solid rgba(124,58,237,0.2)',
-                  boxShadow: '0 0 40px -8px rgba(124,58,237,0.3)',
-                }}
-              >
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center"
-                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}
-                >
-                  <AlertTriangle className="w-8 h-8" style={{ color: '#EF4444' }} />
-                </div>
-                <div className="text-center">
-                  <h3 className="text-lg font-bold text-white mb-1">Stream Unavailable</h3>
-                  <p className="text-sm" style={{ color: '#7B6EA8' }}>
-                    The stream for this episode is currently unavailable or the provider timed out.
-                  </p>
+      {/* ── Main Layout: Video + Episodes Sidebar ──────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
+        {/* ── Left Column: Video Player & Info ─────────────────────── */}
+        <div className="space-y-4">
+          {/* Player Container maintaining 16:9 */}
+          <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-[var(--border)] shadow-2xl">
+            {loading ? (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-[var(--bg-card)]">
+                <Loader2 className="w-8 h-8 animate-spin text-[var(--accent-primary)]" />
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Resolving stream for Episode {epNum}...
+                </p>
+              </div>
+            ) : streamError ? (
+              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[var(--bg-card)]">
+                <AlertTriangle className="w-10 h-10 text-amber-400 mb-2" />
+                <h3 className="text-sm sm:text-base font-bold text-[var(--text-primary)] mb-1">
+                  Stream Unavailable
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] max-w-sm mb-4">
+                  All upstream providers for Episode {epNum} are currently offline or rate-limited.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadStreamAndMeta}
+                    className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Retry Stream
+                  </button>
+                  <button
+                    onClick={() => navigate(`/anime/${animeId}`)}
+                    className="btn-secondary px-4 py-2 rounded-lg text-xs font-medium"
+                  >
+                    Back to Anime
+                  </button>
                 </div>
               </div>
             ) : streamSources[0]?.isIframe ? (
-              <div 
-                className="w-full overflow-hidden rounded-2xl relative"
-                style={{
-                  aspectRatio: '16/9',
-                  border: '1px solid rgba(124,58,237,0.2)',
-                  boxShadow: '0 0 40px -8px rgba(124,58,237,0.5)',
-                  background: '#000'
-                }}
-              >
-                <iframe
-                  src={activeStreamUrl}
-                  width="100%"
-                  height="100%"
-                  frameBorder="0"
-                  allowFullScreen
-                  title={animeTitle}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                ></iframe>
-              </div>
+              <iframe
+                src={activeStreamUrl}
+                title={`Episode ${epNum}`}
+                className="w-full h-full border-0"
+                allowFullScreen
+              />
             ) : (
               <VideoPlayer
                 videoUrl={activeStreamUrl}
                 sources={streamSources}
                 servers={servers}
-                poster={currentEpisode?.thumbnail || animeInfo?.coverImage || FALLBACK_THUMBNAIL}
-                title={currentEpisode ? `Ep ${currentEpisode.episodeNumber} — ${animeTitle}` : animeTitle}
+                poster={currentEpisode?.thumbnail || animeInfo?.coverImage}
+                title={`Episode ${epNum} - ${animeTitle}`}
               />
-            )}
-
-            {/* ── Server Selection Bar (Multi-Provider Switcher) ── */}
-            {servers.length > 0 && !streamError && (
-              <div
-                className="flex flex-wrap items-center gap-2 p-3 rounded-2xl"
-                style={{
-                  background: 'rgba(26,16,48,0.65)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid rgba(124,58,237,0.15)',
-                }}
-              >
-                <span className="text-xs font-semibold px-2 py-1 flex items-center gap-1.5" style={{ color: '#7B6EA8' }}>
-                  <Server className="w-3.5 h-3.5" />
-                  Servers:
-                </span>
-                {servers.map((srv, idx) => {
-                  const isSelected = activeStreamUrl === srv.url;
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        setSelectedServerUrl(srv.url);
-                        if (srv.isIframe) {
-                          setStreamSources([{ url: srv.url, isIframe: true }]);
-                        }
-                      }}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200"
-                      style={{
-                        background: isSelected ? 'linear-gradient(135deg, #7C3AED, #C026D3)' : 'rgba(124,58,237,0.1)',
-                        color: isSelected ? '#FFFFFF' : '#C4B5FD',
-                        border: `1px solid ${isSelected ? 'rgba(192,38,211,0.5)' : 'rgba(124,58,237,0.2)'}`,
-                        boxShadow: isSelected ? '0 0 16px rgba(124,58,237,0.4)' : 'none'
-                      }}
-                    >
-                      {srv.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* ── Quick Episode Navigator (Prev / Next) ── */}
-            <div
-              className="flex items-center justify-between gap-3 p-3 rounded-2xl"
-              style={{
-                background: 'rgba(26,16,48,0.65)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(124,58,237,0.15)',
-              }}
-            >
-              <button
-                disabled={!currentEpisode || currentEpisode.episodeNumber <= 1}
-                onClick={() => navigate(`/watch/${animeId}-ep-${currentEpisode.episodeNumber - 1}`)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200"
-                style={{
-                  background: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? 'rgba(124,58,237,0.05)' : 'rgba(124,58,237,0.15)',
-                  color: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? '#4B3E7A' : '#C4B5FD',
-                  border: '1px solid rgba(124,58,237,0.2)',
-                  cursor: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Previous Episode
-              </button>
-
-              <span className="text-xs font-bold" style={{ color: '#E2D9F3' }}>
-                {currentEpisode ? `Episode ${currentEpisode.episodeNumber}` : 'Episode 1'}
-                {animeInfo?.totalEpisodes ? ` of ${animeInfo.totalEpisodes}` : ''}
-              </span>
-
-              <button
-                disabled={Boolean(animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes)}
-                onClick={() => navigate(`/watch/${animeId}-ep-${(currentEpisode?.episodeNumber || 1) + 1}`)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200"
-                style={{
-                  background: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? 'rgba(124,58,237,0.05)' : 'rgba(124,58,237,0.15)',
-                  color: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? '#4B3E7A' : '#C4B5FD',
-                  border: '1px solid rgba(124,58,237,0.2)',
-                  cursor: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? 'not-allowed' : 'pointer'
-                }}
-              >
-                Next Episode
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* ── Anime Info Panel ──────────────────────────────────────────── */}
-            <div
-              className="rounded-3xl p-6"
-              style={{
-                background: 'rgba(26,16,48,0.75)',
-                backdropFilter: 'blur(24px)',
-                border: '1px solid rgba(124,58,237,0.15)',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              }}
-            >
-              {/* Episode meta row */}
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                {currentEpisode && (
-                  <span
-                    className="px-3 py-1 rounded-full text-xs font-bold"
-                    style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.35)', color: '#C4B5FD' }}
-                  >
-                    Episode {currentEpisode.episodeNumber}
-                  </span>
-                )}
-
-                {animeInfo?.status && (
-                  <span
-                    className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
-                    style={{
-                      background: animeInfo.status === 'Ongoing' ? 'rgba(6,182,212,0.12)' : 'rgba(124,58,237,0.12)',
-                      border: `1px solid ${animeInfo.status === 'Ongoing' ? 'rgba(6,182,212,0.35)' : 'rgba(124,58,237,0.35)'}`,
-                      color: animeInfo.status === 'Ongoing' ? '#06B6D4' : '#A78BFA',
-                    }}
-                  >
-                    {animeInfo.status}
-                  </span>
-                )}
-
-                {animeInfo?.score && (
-                  <span className="flex items-center gap-1 text-xs font-bold" style={{ color: '#F59E0B' }}>
-                    <Star className="w-3.5 h-3.5 fill-current" />
-                    {animeInfo.score}
-                  </span>
-                )}
-
-                <span className="flex items-center gap-1 text-xs" style={{ color: '#7B6EA8' }}>
-                  <Eye className="w-3.5 h-3.5" />
-                  2.4M views
-                </span>
-
-                {/* Stream type badge */}
-                <span
-                  className="ml-auto px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
-                  style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', color: '#06B6D4' }}
-                >
-                  <Server className="w-3 h-3" />
-                  {streamBadge}
-                </span>
-              </div>
-
-              {/* Title */}
-              <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight mb-3">
-                {animeTitle}
-                {currentEpisode && (
-                  <span className="text-xl font-semibold ml-3" style={{ color: '#7B6EA8' }}>
-                    — Ep. {currentEpisode.episodeNumber}
-                  </span>
-                )}
-              </h1>
-
-              {/* Synopsis */}
-              {loading ? (
-                <div className="space-y-2 mb-5">
-                  <div className="skeleton h-3.5 rounded" style={{ width: '100%' }} />
-                  <div className="skeleton h-3.5 rounded" style={{ width: '92%' }} />
-                  <div className="skeleton h-3.5 rounded" style={{ width: '78%' }} />
-                </div>
-              ) : animeError ? (
-                <p className="text-sm leading-relaxed mb-5" style={{ color: '#EF4444' }}>
-                  Unable to load anime information.
-                </p>
-              ) : (
-                <p className="text-sm leading-relaxed mb-5 line-clamp-3" style={{ color: '#A1A1AA' }}>
-                  {synopsis}
-                </p>
-              )}
-
-              {/* Footer metadata */}
-              <div
-                className="flex flex-wrap items-center gap-5 pt-4 text-xs"
-                style={{ borderTop: '1px solid rgba(124,58,237,0.1)', color: '#7B6EA8' }}
-              >
-                {animeInfo?.releaseYear && (
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
-                    <span>{animeInfo.releaseYear}</span>
-                  </div>
-                )}
-                {animeInfo?.totalEpisodes && (
-                  <div className="flex items-center gap-1.5">
-                    <Tv className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
-                    <span>{animeInfo.totalEpisodes} Episodes</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" style={{ color: '#8B5CF6' }} />
-                  <span>~24 min / episode</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" style={{ color: '#C026D3' }} />
-                  <span>1080p Full HD</span>
-                </div>
-
-                {/* Watchlist button */}
-                <button
-                  className="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-200"
-                  style={{
-                    background: 'rgba(124,58,237,0.12)',
-                    border: '1px solid rgba(124,58,237,0.25)',
-                    color: '#C4B5FD',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.25)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(124,58,237,0.12)'}
-                >
-                  <BookMarked className="w-3.5 h-3.5" />
-                  Add to Library
-                </button>
-              </div>
-            </div>
-
-            {/* ── Genres row ────────────────────────────────────────────────── */}
-            {!loading && animeInfo?.genres?.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {animeInfo.genres.map((g, i) => (
-                  <span
-                    key={i}
-                    className="px-3 py-1 rounded-full text-xs font-medium"
-                    style={{
-                      background: 'rgba(124,58,237,0.08)',
-                      border: '1px solid rgba(124,58,237,0.2)',
-                      color: '#A78BFA',
-                    }}
-                  >
-                    {g}
-                  </span>
-                ))}
-              </div>
             )}
           </div>
 
-          {/* ── RIGHT COLUMN: Episode List ───────────────────────────────────── */}
-          <div
-            className="rounded-3xl flex flex-col"
-            style={{
-              background: 'rgba(26,16,48,0.75)',
-              backdropFilter: 'blur(24px)',
-              border: '1px solid rgba(124,58,237,0.15)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              maxHeight: 'calc(100vh - 180px)',
-              position: 'sticky',
-              top: '90px',
-            }}
-          >
-            {/* Panel header */}
-            <div
-              className="flex items-center justify-between px-5 py-4"
-              style={{ borderBottom: '1px solid rgba(124,58,237,0.12)' }}
-            >
-              <div className="flex items-center gap-2">
-                <div
-                  className="p-1.5 rounded-lg"
-                  style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)' }}
-                >
-                  <Film className="w-4 h-4" style={{ color: '#8B5CF6' }} />
-                </div>
-                <h2 className="text-sm font-bold text-white">Episode List</h2>
-              </div>
-              <span
-                className="text-[11px] font-semibold px-2 py-1 rounded-full"
-                style={{ background: 'rgba(124,58,237,0.1)', color: '#A78BFA' }}
-              >
-                {episodes.length} eps
+          {/* Server Switcher Bar */}
+          {servers.length > 0 && !streamError && (
+            <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border)]">
+              <span className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 mr-1">
+                <Server className="w-3.5 h-3.5" />
+                Source:
               </span>
+              {servers.map((srv, idx) => {
+                const isSelected = activeStreamUrl === srv.url;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setSelectedServerUrl(srv.url);
+                      if (srv.isIframe) {
+                        setStreamSources([{ url: srv.url, isIframe: true }]);
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      isSelected
+                        ? 'bg-[var(--accent-primary)] text-white'
+                        : 'bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-white'
+                    }`}
+                  >
+                    {srv.name || `Server ${idx + 1}`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Prev / Next Episode Controls Bar */}
+          <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border)]">
+            <button
+              disabled={epNum <= 1}
+              onClick={() => navigate(`/watch/${animeId}-ep-${epNum - 1}`)}
+              className="btn-secondary flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Previous</span>
+            </button>
+
+            <span className="text-xs font-bold text-[var(--text-primary)]">
+              Episode {epNum} {animeInfo?.totalEpisodes && `of ${animeInfo.totalEpisodes}`}
+            </span>
+
+            <button
+              disabled={Boolean(animeInfo?.totalEpisodes && epNum >= animeInfo.totalEpisodes)}
+              onClick={() => navigate(`/watch/${animeId}-ep-${epNum + 1}`)}
+              className="btn-secondary flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Anime Information Under Player */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 className="text-base sm:text-xl font-bold text-[var(--text-primary)]">
+                  {animeTitle}
+                </h1>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Episode {epNum} &bull; {animeInfo?.type || 'TV Series'}
+                </p>
+              </div>
+
+              <button
+                onClick={() => animeInfo && toggleWatchlist(animeInfo)}
+                className="btn-secondary inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium"
+              >
+                {isBookmarked ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>In Watchlist</span>
+                  </>
+                ) : (
+                  <>
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>Add to Watchlist</span>
+                  </>
+                )}
+              </button>
             </div>
 
-            {/* Scrollable episode list */}
-            <div
-              className="flex flex-col gap-2 p-3 overflow-y-auto af-scrollbar"
-              style={{ flex: 1, minHeight: 0 }}
-            >
-              {loading ? (
-                Array.from({ length: 6 }).map((_, i) => <EpisodeSkeleton key={i} />)
-              ) : episodesError ? (
-                <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
-                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
-                  <p>Unable to load episode list.</p>
-                </div>
-              ) : episodes.length > 0 ? (
-                episodes.map(ep => (
-                  <EpisodeItem key={ep._id} ep={ep} activeId={episodeId} />
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center p-6 text-center text-sm" style={{ color: '#A1A1AA' }}>
-                  <AlertTriangle className="w-8 h-8 mb-2" style={{ color: '#EF4444' }} />
-                  <p>No episodes found.</p>
-                </div>
-              )}
+            {animeInfo?.synopsis && (
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-3 pt-2 border-t border-[var(--border-subtle)]">
+                {animeInfo.synopsis}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right Column: Episode List Sidebar ───────────────────── */}
+        <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border)] overflow-hidden flex flex-col max-h-[560px] lg:sticky lg:top-20">
+          <div className="p-3.5 border-b border-[var(--border)] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Film className="w-4 h-4 text-[var(--accent-hover)]" />
+              <h3 className="text-xs sm:text-sm font-bold text-[var(--text-primary)]">
+                Episodes ({episodes.length})
+              </h3>
             </div>
+            <span className="text-[10px] text-[var(--text-muted)]">Select to Play</span>
+          </div>
+
+          <div className="p-3 space-y-2 overflow-y-auto custom-scrollbar flex-1">
+            {episodes.map((ep) => (
+              <EpisodeItem
+                key={ep._id}
+                ep={ep}
+                activeId={episodeId}
+                animeId={animeId}
+              />
+            ))}
           </div>
         </div>
       </div>
