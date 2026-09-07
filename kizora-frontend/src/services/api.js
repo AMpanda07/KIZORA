@@ -1,12 +1,17 @@
 import axios from 'axios';
 
+// VITE_API_URL must be set in Vercel dashboard → Environment Variables
+// Local dev: create kizora-frontend/.env.local with VITE_API_URL=http://localhost:5000/api
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
 const API = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   },
-  timeout: 10000
+  timeout: 15000
 });
+
 
 /**
  * Fetch trending/airing anime catalog from our backend provider route.
