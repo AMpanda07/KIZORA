@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const TIMEOUT = 15000;
+const TIMEOUT = 6000;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ const normalizeAniListAnime = (media) => {
 
 // Try Jikan (MAL) with Retry Logic
 const fetchJikanWithRetry = async (malId, attempt = 1) => {
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 1;
   try {
     console.log(`[JIKAN] Attempt ${attempt}/${MAX_RETRIES}: ${malId}`);
     const response = await axios.get(`https://api.jikan.moe/v4/anime/${malId}`, { 
@@ -146,20 +146,79 @@ const getTitleWithFallback = async (animeId) => {
 // Map to hold in-flight promises to prevent duplicate concurrent requests
 const pendingRequests = new Map();
 
+const STATIC_CATALOG = [
+  { _id: '21', anilistId: 21, malId: 21, title: 'One Piece', japaneseTitle: 'ONE PIECE', synopsis: 'Monkey D. Luffy sets off on an adventure with his pirate crew to find the greatest treasure in the world.', coverImage: 'https://cdn.myanimelist.net/images/anime/6/73245l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/6/73245l.jpg', genres: ['Action', 'Adventure', 'Comedy'], totalEpisodes: 1122, status: 'Ongoing', releaseYear: 1999, score: 8.7 },
+  { _id: '16498', anilistId: 16498, malId: 16498, title: 'Attack on Titan', japaneseTitle: 'Shingeki no Kyojin', synopsis: 'After his hometown is destroyed and his mother killed, young Eren vows to cleanse the earth of Titans.', coverImage: 'https://cdn.myanimelist.net/images/anime/10/47347l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/10/47347l.jpg', genres: ['Action', 'Drama', 'Fantasy'], totalEpisodes: 87, status: 'Completed', releaseYear: 2013, score: 9.0 },
+  { _id: '5114', anilistId: 5114, malId: 5114, title: 'Fullmetal Alchemist: Brotherhood', japaneseTitle: 'Hagane no Renkinjutsushi', synopsis: 'Two brothers search for a Philosopher\'s Stone after a failed alchemy attempt.', coverImage: 'https://cdn.myanimelist.net/images/anime/1223/96541l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/1223/96541l.jpg', genres: ['Action', 'Adventure', 'Drama'], totalEpisodes: 64, status: 'Completed', releaseYear: 2009, score: 9.1 },
+  { _id: '1535', anilistId: 1535, malId: 1535, title: 'Death Note', japaneseTitle: 'Death Note', synopsis: 'A student uses a supernatural notebook to rid the world of criminals.', coverImage: 'https://cdn.myanimelist.net/images/anime/9/9453l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/9/9453l.jpg', genres: ['Mystery', 'Supernatural', 'Thriller'], totalEpisodes: 37, status: 'Completed', releaseYear: 2006, score: 8.6 },
+  { _id: '11061', anilistId: 11061, malId: 11061, title: 'Hunter x Hunter (2011)', japaneseTitle: 'HUNTER×HUNTER', synopsis: 'Gon aspires to become a Hunter and seeks out his missing father across dangerous lands.', coverImage: 'https://cdn.myanimelist.net/images/anime/11/33657l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/11/33657l.jpg', genres: ['Action', 'Adventure', 'Fantasy'], totalEpisodes: 148, status: 'Completed', releaseYear: 2011, score: 9.0 },
+  { _id: '38000', anilistId: 38000, malId: 38000, title: 'Demon Slayer', japaneseTitle: 'Kimetsu no Yaiba', synopsis: 'A young boy becomes a demon slayer to cure his sister who was turned into a demon.', coverImage: 'https://cdn.myanimelist.net/images/anime/1286/99889l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/1286/99889l.jpg', genres: ['Action', 'Fantasy', 'Historical'], totalEpisodes: 26, status: 'Completed', releaseYear: 2019, score: 8.7 },
+  { _id: '20', anilistId: 20, malId: 20, title: 'Naruto', japaneseTitle: 'NARUTO', synopsis: 'A young ninja seeks recognition from his peers and dreams of becoming the Hokage.', coverImage: 'https://cdn.myanimelist.net/images/anime/13/17405l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/13/17405l.jpg', genres: ['Action', 'Adventure', 'Martial Arts'], totalEpisodes: 220, status: 'Completed', releaseYear: 2002, score: 8.4 },
+  { _id: '30276', anilistId: 30276, malId: 30276, title: 'One Punch Man', japaneseTitle: 'One Punch Man', synopsis: 'Saitama is a hero who defeats any opponent with a single punch.', coverImage: 'https://cdn.myanimelist.net/images/anime/12/76049l.jpg', bannerImage: 'https://cdn.myanimelist.net/images/anime/12/76049l.jpg', genres: ['Action', 'Comedy', 'Sci-Fi'], totalEpisodes: 12, status: 'Completed', releaseYear: 2015, score: 8.8 }
+];
+
+const fetchAniwixiInfo = async (animeId) => {
+  const res = await axios.get(`https://aniwixi.xyz/wp-json/aniwixi/v1/anilist/${animeId}`, { timeout: 8000 });
+  if (res.data && res.data.status === 'success' && res.data.data?.info) {
+    const info = res.data.data.info;
+    return {
+      _id: `${animeId}`,
+      anilistId: parseInt(info.anilist_id || animeId, 10),
+      malId: parseInt(info.mal_id || animeId, 10),
+      title: info.title?.english || info.title?.romaji || info.title?.native,
+      japaneseTitle: info.title?.native || info.title?.romaji,
+      synopsis: info.synopsis ? info.synopsis.replace(/<[^>]*>?/gm, '') : '',
+      coverImage: info.poster,
+      bannerImage: info.banner || info.poster,
+      status: info.status === 'RELEASING' ? 'Ongoing' : 'Completed',
+      genres: info.genres || ['Action'],
+      totalEpisodes: res.data.data.episodes?.length || 24,
+      releaseYear: parseInt(info.year, 10) || 2020,
+      score: (parseFloat(info.score) / 10) || 8.0,
+      type: 'TV',
+      source: 'AniWixi'
+    };
+  }
+  throw new Error('AniWixi info not available');
+};
+
 const _getAnimeInfoWithFallbackInternal = async (animeId) => {
-  console.log(`[METADATA] Fetching metadata: ${animeId}`);
+  console.log(`[METADATA] request (animeId: ${animeId})`);
+  
+  // Step 1: AniList
   try {
     const anilistMedia = await fetchAniListInfo(animeId);
     return normalizeAniListAnime(anilistMedia);
   } catch (err) {
     console.warn(`[METADATA] AniList failed: ${err.response?.status || err.message}`);
-    
-    // Fallback to Jikan
+  }
+
+  // Step 2: Jikan
+  try {
     console.log(`[METADATA] Falling back to Jikan: ${animeId}`);
     const jikanData = await fetchJikanWithRetry(animeId);
-    if (!jikanData) throw new Error('Jikan returned no data');
-    return normalizeJikanAnime(jikanData);
+    if (jikanData) return normalizeJikanAnime(jikanData);
+  } catch (err) {
+    console.warn(`[METADATA] Jikan failed: ${err.response?.status || err.message}`);
   }
+
+  // Step 3: AniWixi Provider Info
+  try {
+    console.log(`[METADATA] Falling back to AniWixi: ${animeId}`);
+    const aniwixiData = await fetchAniwixiInfo(animeId);
+    if (aniwixiData) return aniwixiData;
+  } catch (err) {
+    console.warn(`[METADATA] AniWixi metadata failed: ${err.message}`);
+  }
+
+  // Step 4: Static Catalog Fallback
+  const staticMatch = STATIC_CATALOG.find(c => c._id === `${animeId}` || c.malId === parseInt(animeId, 10));
+  if (staticMatch) {
+    console.log(`[METADATA] Resolved via Static Catalog: ${staticMatch.title}`);
+    return staticMatch;
+  }
+
+  throw new Error(`Could not resolve metadata for anime ${animeId} across any source`);
 };
 
 const getAnimeInfoWithFallback = async (animeId) => {

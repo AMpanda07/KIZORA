@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { fetchAnimeInfo, fetchEpisodes, fetchStreamSources } from '../services/api';
+import { fetchAnimeInfo, fetchEpisodeStream } from '../services/api';
 import VideoPlayer from '../components/VideoPlayer';
 import {
   Play, Star, Eye, Calendar, Sparkles, Film,
   Loader2, Server, ArrowLeft, AlertTriangle,
-  Tv, Clock, ChevronRight, BookMarked
+  Tv, Clock, ChevronRight, ChevronLeft, BookMarked
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -109,6 +109,8 @@ const Watch = () => {
   const [animeInfo,       setAnimeInfo]       = useState(null);
   const [streamSources,   setStreamSources]   = useState([]);
   const [servers,         setServers]         = useState([]);
+  const [selectedServerUrl, setSelectedServerUrl] = useState(null);
+  const [activeProviderName, setActiveProviderName] = useState('');
   const [episodes,        setEpisodes]        = useState([]);
   const [currentEpisode,  setCurrentEpisode]  = useState(null);
   const [loading,         setLoading]         = useState(true);
@@ -118,7 +120,7 @@ const Watch = () => {
   const [episodesError,   setEpisodesError]   = useState(false);
   const [streamError,     setStreamError]     = useState(false);
 
-  // ── Fetch all data whenever the URL id changes ─────────────────────────────
+  // ── Fetch only requested episode stream + metadata (Lazy Resolution) ──────
   useEffect(() => {
     if (!episodeId) return;
     let mounted = true;
@@ -128,15 +130,18 @@ const Watch = () => {
       setAnimeError(false);
       setEpisodesError(false);
       setStreamError(false);
+      setSelectedServerUrl(null);
+      setActiveProviderName('');
 
-      // Decompose compound IDs like "21-ep-3" → animeId = "21"
+      // Decompose compound IDs like "21-ep-3" → animeId = "21", episodeNum = 3
       const parts   = episodeId.split('-ep-');
       const animeId = parts[0];
+      const epNum   = parts[1] ? parseInt(parts[1], 10) : 1;
 
-      const [streamRes, infoRes, epsRes] = await Promise.allSettled([
-        fetchStreamSources(episodeId),
+      // Parallelize only metadata + requested episode stream (NO full catalog scraping)
+      const [streamRes, infoRes] = await Promise.allSettled([
+        fetchEpisodeStream(animeId, epNum),
         fetchAnimeInfo(animeId),
-        fetchEpisodes(animeId),
       ]);
 
       if (!mounted) return;
@@ -144,15 +149,18 @@ const Watch = () => {
       // ── Stream sources ──
       if (streamRes.status === 'fulfilled' && streamRes.value) {
         const streamData = streamRes.value;
+        setActiveProviderName(streamData.provider || '');
         if (streamData.isIframe && streamData.url) {
           // Iframe payload
           setStreamSources([{ url: streamData.url, isIframe: true }]);
           setServers(streamData.servers || []);
+          setSelectedServerUrl(streamData.url);
           setStreamError(false);
         } else if (streamData.sources?.length) {
           // Native video payload (.m3u8)
           setStreamSources(streamData.sources);
           setServers(streamData.servers || []);
+          setSelectedServerUrl(streamData.sources[0]?.url || streamData.url);
           setStreamError(false);
         } else {
           setStreamSources([]);
@@ -163,25 +171,47 @@ const Watch = () => {
         setStreamError(true);
       }
 
-      // ── Anime metadata ──
+      // ── Anime metadata & Lazy Episode List UI ──
       if (infoRes.status === 'fulfilled' && infoRes.value) {
-        setAnimeInfo(infoRes.value);
+        const info = infoRes.value;
+        setAnimeInfo(info);
         setAnimeError(false);
+
+        // Build episode list directly from totalEpisodes (0 external provider calls)
+        const total = info.totalEpisodes || 12;
+        const fallbackThumb = info.bannerImage || info.coverImage || FALLBACK_THUMBNAIL;
+        const epList = Array.from({ length: total }, (_, i) => ({
+          _id: `${animeId}-ep-${i + 1}`,
+          episodeNumber: i + 1,
+          title: `Episode ${i + 1}`,
+          thumbnail: fallbackThumb
+        }));
+        setEpisodes(epList);
+        setCurrentEpisode({
+          _id: `${animeId}-ep-${epNum}`,
+          episodeNumber: epNum,
+          title: `Episode ${epNum}`,
+          thumbnail: fallbackThumb
+        });
       } else {
         setAnimeInfo(null);
         setAnimeError(true);
-      }
 
-      // ── Episode list ──
-      if (epsRes.status === 'fulfilled' && epsRes.value?.length > 0) {
-        setEpisodes(epsRes.value);
-        const matched = epsRes.value.find(e => e._id === episodeId) || epsRes.value[0];
-        setCurrentEpisode(matched || null);
-        setEpisodesError(false);
-      } else {
-        setEpisodes([]);
-        setCurrentEpisode(null);
-        setEpisodesError(true);
+        // Fallback episode structure
+        const fallbackTotal = 12;
+        const epList = Array.from({ length: fallbackTotal }, (_, i) => ({
+          _id: `${animeId}-ep-${i + 1}`,
+          episodeNumber: i + 1,
+          title: `Episode ${i + 1}`,
+          thumbnail: FALLBACK_THUMBNAIL
+        }));
+        setEpisodes(epList);
+        setCurrentEpisode({
+          _id: `${animeId}-ep-${epNum}`,
+          episodeNumber: epNum,
+          title: `Episode ${epNum}`,
+          thumbnail: FALLBACK_THUMBNAIL
+        });
       }
 
       setLoading(false);
@@ -192,7 +222,7 @@ const Watch = () => {
   }, [episodeId]);
 
   // Resolve the stream URL to feed into the player
-  const activeStreamUrl = streamSources.length > 0 ? streamSources[0].url : null;
+  const activeStreamUrl = selectedServerUrl || (streamSources.length > 0 ? streamSources[0].url : null);
 
   // Helpers
   const animeId    = (episodeId || '21').split('-ep-')[0];
@@ -200,7 +230,7 @@ const Watch = () => {
   const synopsis   = animeInfo?.synopsis || 'No synopsis available.';
 
   // ── Badge label for stream type ──
-  const streamBadge = activeStreamUrl?.includes('.m3u8') ? 'HLS Adaptive Stream' : 'MP4 Stream';
+  const streamBadge = activeProviderName ? `Source: ${activeProviderName.toUpperCase()}` : (activeStreamUrl?.includes('.m3u8') ? 'HLS Adaptive Stream' : 'HD Stream');
 
   return (
     <div
@@ -331,6 +361,91 @@ const Watch = () => {
                 title={currentEpisode ? `Ep ${currentEpisode.episodeNumber} — ${animeTitle}` : animeTitle}
               />
             )}
+
+            {/* ── Server Selection Bar (Multi-Provider Switcher) ── */}
+            {servers.length > 0 && !streamError && (
+              <div
+                className="flex flex-wrap items-center gap-2 p-3 rounded-2xl"
+                style={{
+                  background: 'rgba(26,16,48,0.65)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(124,58,237,0.15)',
+                }}
+              >
+                <span className="text-xs font-semibold px-2 py-1 flex items-center gap-1.5" style={{ color: '#7B6EA8' }}>
+                  <Server className="w-3.5 h-3.5" />
+                  Servers:
+                </span>
+                {servers.map((srv, idx) => {
+                  const isSelected = activeStreamUrl === srv.url;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setSelectedServerUrl(srv.url);
+                        if (srv.isIframe) {
+                          setStreamSources([{ url: srv.url, isIframe: true }]);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200"
+                      style={{
+                        background: isSelected ? 'linear-gradient(135deg, #7C3AED, #C026D3)' : 'rgba(124,58,237,0.1)',
+                        color: isSelected ? '#FFFFFF' : '#C4B5FD',
+                        border: `1px solid ${isSelected ? 'rgba(192,38,211,0.5)' : 'rgba(124,58,237,0.2)'}`,
+                        boxShadow: isSelected ? '0 0 16px rgba(124,58,237,0.4)' : 'none'
+                      }}
+                    >
+                      {srv.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Quick Episode Navigator (Prev / Next) ── */}
+            <div
+              className="flex items-center justify-between gap-3 p-3 rounded-2xl"
+              style={{
+                background: 'rgba(26,16,48,0.65)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(124,58,237,0.15)',
+              }}
+            >
+              <button
+                disabled={!currentEpisode || currentEpisode.episodeNumber <= 1}
+                onClick={() => navigate(`/watch/${animeId}-ep-${currentEpisode.episodeNumber - 1}`)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? 'rgba(124,58,237,0.05)' : 'rgba(124,58,237,0.15)',
+                  color: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? '#4B3E7A' : '#C4B5FD',
+                  border: '1px solid rgba(124,58,237,0.2)',
+                  cursor: (!currentEpisode || currentEpisode.episodeNumber <= 1) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous Episode
+              </button>
+
+              <span className="text-xs font-bold" style={{ color: '#E2D9F3' }}>
+                {currentEpisode ? `Episode ${currentEpisode.episodeNumber}` : 'Episode 1'}
+                {animeInfo?.totalEpisodes ? ` of ${animeInfo.totalEpisodes}` : ''}
+              </span>
+
+              <button
+                disabled={Boolean(animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes)}
+                onClick={() => navigate(`/watch/${animeId}-ep-${(currentEpisode?.episodeNumber || 1) + 1}`)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? 'rgba(124,58,237,0.05)' : 'rgba(124,58,237,0.15)',
+                  color: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? '#4B3E7A' : '#C4B5FD',
+                  border: '1px solid rgba(124,58,237,0.2)',
+                  cursor: (animeInfo?.totalEpisodes && currentEpisode && currentEpisode.episodeNumber >= animeInfo.totalEpisodes) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Next Episode
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
 
             {/* ── Anime Info Panel ──────────────────────────────────────────── */}
             <div

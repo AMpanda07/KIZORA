@@ -150,47 +150,55 @@ router.get('/info/:animeId', cacheMiddleware(1800), async (req, res) => {
 });
 
 /**
+ * @route   GET /api/provider/health
+ * @desc    Get real-time health and priority status of all 5 anime providers
+ */
+router.get('/health', async (req, res) => {
+  try {
+    const { getProviderHealth } = require('../services/provider.service');
+    const health = await getProviderHealth();
+    return res.status(200).json(health);
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/provider/test/:animeId/:episodeNumber
+ * @desc    Development route: run diagnostic test across all 5 providers
+ */
+router.get('/test/:animeId/:episodeNumber', async (req, res) => {
+  try {
+    const { animeId, episodeNumber } = req.params;
+    const epNum = parseInt(episodeNumber, 10) || 1;
+    let info = await getAnimeInfoWithFallback(animeId).catch(() => null);
+    if (!info || !info.title) {
+      info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [] };
+    }
+    const { runProviderDiagnostic } = require('../services/provider.service');
+    const diagnostic = await runProviderDiagnostic(animeId, epNum, info);
+    return res.status(200).json(diagnostic);
+  } catch (error) {
+    return res.status(500).json({ error: 'Diagnostic test failed', message: error.message });
+  }
+});
+
+/**
  * @route   GET /api/provider/episodes/:animeId
- * @desc    Fetch episode list dynamically mapped from MAL to Provider
+ * @desc    Fetch episode list dynamically resolved across the 5 providers
  */
 router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
   try {
-    const { animeId } = req.params; // KIZORA/AniList/MAL ID
+    const { animeId } = req.params;
+    console.log(`[EPISODES] Resolving episode list for ID: ${animeId}`);
 
-    // 1. Get Anime info to resolve metadata (Title, Synonyms)
-    console.log(`[EPISODES] Step 1: Fetching info for ID: ${animeId}`);
-    const info = await getAnimeInfoWithFallback(animeId);
+    let info = await getAnimeInfoWithFallback(animeId).catch(() => null);
     if (!info || !info.title) {
-      throw new Error(`Could not resolve metadata for ${animeId}`);
+      info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [], totalEpisodes: 24 };
     }
 
-    // 2. Search Provider
-    const { searchProviderAnime, getProviderEpisodes } = require('../services/provider.service');
-    const providerAnimeId = await searchProviderAnime(info.title, info.japaneseTitle, info.synonyms);
-    
-    if (!providerAnimeId) {
-      throw new Error(`Provider anime not found for title: ${info.title}`);
-    }
-
-    // 3. Fetch Provider Episodes
-    const providerEps = await getProviderEpisodes(providerAnimeId);
-    if (providerEps.length === 0) {
-      throw new Error(`Provider episode list empty for: ${providerAnimeId}`);
-    }
-
-    // 4. Map to KIZORA schema
-    // Fallback thumbnail: use anime's cover or banner image, NEVER the hardcoded red placeholder
-    const fallbackThumb = info.bannerImage || info.coverImage || '';
-
-    const episodes = providerEps.map(ep => ({
-      _id: `${animeId}-ep-${ep.number}`, // KIZORA routing ID
-      anilistId: animeId,
-      providerEpisodeId: ep.id,          // EXACT provider ID (e.g. one-piece-episode-1)
-      episodeNumber: ep.number,
-      title: ep.title || `Episode ${ep.number}`,
-      duration: '24:00', // We don't get duration from this API
-      thumbnail: fallbackThumb
-    }));
+    const { resolveEpisodes } = require('../services/provider.service');
+    const episodes = await resolveEpisodes(animeId, info);
 
     return res.status(200).json(episodes);
   } catch (error) {
@@ -200,13 +208,26 @@ router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
 });
 
 /**
+ * @route   GET /api/provider/stream/:animeId/:episodeNumber
+ * @desc    Lazy single-episode stream resolution across 5-provider fallback cascade
+ */
+router.get('/stream/:animeId/:episodeNumber', (req, res) => {
+  return getLiveStreamSources(req, res);
+});
+
+/**
+ * @route   GET /api/provider/episode/:animeId/:episodeNumber
+ * @desc    Alias for lazy single-episode resolution
+ */
+router.get('/episode/:animeId/:episodeNumber', (req, res) => {
+  return getLiveStreamSources(req, res);
+});
+
+/**
  * @route   GET /api/provider/stream/:episodeId
- * @desc    Fetch dynamic HLS (.m3u8) streaming sources via provider cascade:
- *          Consumet/Gogoanime → Consumet/Zoro → AnimeKai → static HLS fallback
- *          NOTE: Streams are NOT cached (5-min CDN tokens expire quickly).
+ * @desc    Fetch stream sources via 5-provider fallback cascade (compound id: animeId-ep-1)
  */
 router.get('/stream/:episodeId', (req, res) => {
-  // Re-map param name so controller receives req.params.id
   req.params.id = req.params.episodeId;
   return getLiveStreamSources(req, res);
 });

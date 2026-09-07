@@ -53,7 +53,17 @@ export const fetchEpisodes = async (animeId) => {
 };
 
 /**
- * Fetch HLS stream sources for a given episode ID.
+ * Lazy fetch stream sources for a specific anime ID and episode number.
+ * Only resolves the requested episode without fetching all other episodes.
+ */
+export const fetchEpisodeStream = async (animeId, episodeNumber) => {
+  const epNum = episodeNumber || 1;
+  const response = await API.get(`/provider/stream/${animeId}/${epNum}`);
+  return response.data;
+};
+
+/**
+ * Fetch stream sources for a given episode ID (e.g. "21-ep-1").
  */
 export const fetchStreamSources = async (episodeId) => {
   const response = await API.get(`/provider/stream/${episodeId}`);

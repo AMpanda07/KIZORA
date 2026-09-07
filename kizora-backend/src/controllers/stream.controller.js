@@ -1,70 +1,82 @@
-const axios = require('axios');
-const { getTitleWithFallback } = require('../utils/metadata');
+const { getAnimeInfoWithFallback } = require('../utils/metadata');
+const { resolveStream } = require('../services/provider.service');
 
-const FAST_TIMEOUT = 30000;
-const ANIWATCH_BASE = process.env.ANIWATCH_API_URL || 'https://aniwatch-api-v1-0.onrender.com';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Controller: getLiveStreamSources
-// Resolves stream using Iframe Embeds (Jikan + Third-Party Proxy approach)
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Controller: getLiveStreamSources
+ * Resolves stream sources across the 5 providers using sequential per-episode fallback
+ */
 const getLiveStreamSources = async (req, res) => {
-  const rawId = req.params.id || req.params.episodeId || '';
+  let animeId = req.params.animeId;
+  let episodeNum = req.params.episodeNumber ? parseInt(req.params.episodeNumber, 10) : null;
 
-  if (!rawId) {
+  const rawId = req.params.id || req.params.episodeId || '';
+  if (!animeId && rawId) {
+    const compoundMatch = rawId.match(/^(\d+)-ep-(\d+)$/);
+    if (compoundMatch) {
+      animeId = compoundMatch[1];
+      episodeNum = parseInt(compoundMatch[2], 10);
+    } else {
+      animeId = rawId;
+      episodeNum = 1;
+    }
+  }
+
+  if (!animeId) {
     return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Episode ID is required. Pass it as /stream/:id',
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'Anime ID and episode number are required.'
+      }
     });
   }
 
-  const compoundMatch = rawId.match(/^(\d+)-ep-(\d+)$/);
-  const animeId    = compoundMatch ? compoundMatch[1] : rawId; // KIZORA / MAL ID
-  const episodeNum = compoundMatch ? parseInt(compoundMatch[2], 10) : 1;
+  if (!episodeNum || isNaN(episodeNum)) {
+    episodeNum = 1;
+  }
 
   try {
-    // 1. Get Anime info to resolve metadata
-    const info = await getAnimeInfoWithFallback(animeId);
+    // 1. Resolve Anime Metadata
+    let info = await getAnimeInfoWithFallback(animeId).catch(() => null);
     if (!info || !info.title) {
-      throw new Error(`Could not resolve metadata for ${animeId}`);
+      info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [] };
     }
 
-    // 2. Search Provider
-    const { searchProviderAnime, getProviderEpisodes, getProviderStream } = require('../services/provider.service');
-    const providerAnimeId = await searchProviderAnime(info.title, info.japaneseTitle, info.synonyms);
-    
-    if (!providerAnimeId) {
-      throw new Error(`Provider anime not found for title: ${info.title}`);
+    // 2. Resolve Stream sequentially across the 5 providers for this episode ONLY
+    const streamResult = await resolveStream(animeId, episodeNum, info);
+
+    if (streamResult && streamResult.success && streamResult.url) {
+      return res.status(200).json({
+        success: true,
+        provider: streamResult.provider,
+        url: streamResult.url,
+        isIframe: streamResult.isIframe !== false,
+        sources: streamResult.sources || (streamResult.type === 'hls' ? [{ url: streamResult.url, isM3U8: true }] : []),
+        servers: streamResult.servers || []
+      });
     }
 
-    // 3. Fetch Provider Episodes
-    const providerEps = await getProviderEpisodes(providerAnimeId);
-    if (providerEps.length === 0) {
-      throw new Error(`Provider episode list empty for: ${providerAnimeId}`);
-    }
-
-    // 4. Find matching episode
-    const targetEp = providerEps.find(ep => ep.number === episodeNum);
-    if (!targetEp) {
-      throw new Error(`Episode ${episodeNum} not found in provider list`);
-    }
-
-    // 5. Fetch stream sources
-    const streamInfo = await getProviderStream(targetEp.id);
-
-    return res.status(200).json({
-      success: true,
-      url: streamInfo.url,
-      isIframe: streamInfo.type === 'iframe',
-      sources: streamInfo.type === 'hls' ? [{ url: streamInfo.url, isM3U8: true }] : [],
-      servers: []
+    // All 5 providers failed: return exact specification schema
+    return res.status(404).json({
+      success: false,
+      error: {
+        code: 'ALL_PROVIDERS_FAILED',
+        animeId: String(animeId),
+        episode: episodeNum
+      },
+      attempted: streamResult?.attemptedProviders || []
     });
 
   } catch (e) {
-    console.error(`[STREAM] Error: ${e.message}`);
+    console.error(`[STREAM CONTROLLER] Error: ${e.message}`);
     return res.status(500).json({
-      error: 'Stream unavailable for this episode',
-      message: e.message
+      success: false,
+      error: {
+        code: 'SERVER_ERROR',
+        message: e.message,
+        animeId: String(animeId),
+        episode: episodeNum
+      }
     });
   }
 };
