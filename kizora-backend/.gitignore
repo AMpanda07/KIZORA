@@ -18,6 +18,13 @@ lerna-debug.log*
 .DS_Store
 Thumbs.db
 
+# Development scratch / test files
+scratch.js
+scratch2.js
+ep.html
+info.json
+search.json
+
 # IDE / Editor files
 .vscode/
 .idea/
