@@ -49,9 +49,8 @@ export const animeService = {
     return data.map(mapAnimeForUI);
   },
 
-  async getSchedule(day) {
-    const data = await fetchSchedule(day);
-    return data.map(mapAnimeForUI);
+  async getSchedule(weekOffset = 0) {
+    return await fetchSchedule(weekOffset);
   },
 
   async getGenres() {

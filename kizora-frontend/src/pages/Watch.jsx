@@ -149,7 +149,10 @@ export const Watch = () => {
           ) : (
             <VideoPlayer 
               videoUrl={videoUrl}
+              type={selectedSource?.type || streamData?.type}
+              isIframe={selectedSource?.isIframe ?? streamData?.isIframe}
               sources={sources}
+              servers={streamData?.servers || []}
               poster={activeEpisodeObj.thumbnail || anime.bannerImage || anime.coverImage}
               title={`${anime.title} - Episode ${currentEpNum}`}
               onTimeUpdate={(currentTime, duration) => {

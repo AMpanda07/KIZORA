@@ -155,35 +155,14 @@ router.get('/recent', cacheMiddleware(900), async (req, res) => {
   }
 });
 
+const { getWeeklySchedule } = require('../controllers/schedule.controller');
+
 /**
  * @route   GET /api/provider/schedule
- * @desc    Fetch weekly anime release schedule (Cached 1 hr)
+ * @desc    Fetch real weekly anime release schedule from AniList (Asia/Kolkata timezone)
  */
-router.get('/schedule', cacheMiddleware(3600), async (req, res) => {
-  try {
-    const { day } = req.query;
-    let url = `${JIKAN_BASE_URL}/schedules`;
-    if (day) {
-      url += `?filter=${encodeURIComponent(day.toLowerCase())}`;
-    }
-    const response = await axios.get(url, { timeout: 4000 });
-    const normalizedList = (response.data.data || []).map(item => ({
-      ...normalizeAnime(item),
-      airingTime: item.broadcast?.time || 'TBA',
-      airingDay: item.broadcast?.day || day || 'Unknown',
-      broadcastString: item.broadcast?.string || ''
-    }));
-    return res.status(200).json(normalizedList);
-  } catch (error) {
-    console.warn(`Schedule Jikan API failed (${error.message}), trying AniList fallback...`);
-    try {
-      const aniListCatalog = await fetchAniListCatalog('POPULARITY_DESC', 12);
-      return res.status(200).json(aniListCatalog);
-    } catch (fallbackError) {
-      console.error(`Schedule fallback error: ${fallbackError.message}`);
-      return res.status(500).json({ error: 'Schedule temporarily unavailable', message: fallbackError.message });
-    }
-  }
+router.get('/schedule', (req, res) => {
+  return getWeeklySchedule(req, res);
 });
 
 /**

@@ -206,24 +206,31 @@ export const fetchStreamSources = async (episodeId, signal) => {
   return response.data;
 };
 
-/**
- * Fetch release schedule by day of week
- */
-export const fetchSchedule = async (day) => {
+export const fetchSchedule = async (weekOffset = 0) => {
   try {
-    const response = await API.get('/provider/schedule', { params: day ? { day } : {} });
-    if (response.data && Array.isArray(response.data)) {
-      return response.data.map((item) => ({
-        ...normalizeAnime(item),
-        airingTime: item.airingTime || 'TBA',
-        airingDay: item.airingDay || day || 'Unknown',
-        broadcastString: item.broadcastString || '',
+    const response = await API.get('/provider/schedule', { params: { weekOffset } });
+    if (response.data && response.data.success) {
+      // Map normalizeAnime over events in each day
+      const mappedDays = response.data.days.map(day => ({
+        ...day,
+        events: day.events.map(event => ({
+          ...normalizeAnime(event),
+          airingTime: event.airingTime || 'TBA',
+          airingDay: day.weekday || 'Unknown',
+          timeUntilAiring: event.timeUntilAiring,
+          status: event.status,
+          episode: event.episode
+        }))
       }));
+      return {
+        ...response.data,
+        days: mappedDays
+      };
     }
   } catch (err) {
     console.warn('[API] Schedule fetch failed:', err.message);
   }
-  return [];
+  return null;
 };
 
 export default API;
