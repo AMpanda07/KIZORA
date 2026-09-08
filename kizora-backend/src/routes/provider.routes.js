@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { cacheMiddleware } = require('../middleware/cache');
 const { getTitleWithFallback, getAnimeInfoWithFallback } = require('../utils/metadata');
-const { getLiveStreamSources, invalidateStreamCache } = require('../controllers/stream.controller');
+const { getLiveStreamSources, invalidateStreamCache, getAvailableServers } = require('../controllers/stream.controller');
 
 const router = express.Router();
 const JIKAN_BASE_URL = 'https://api.jikan.moe/v4';
@@ -155,6 +155,54 @@ router.get('/recent', cacheMiddleware(900), async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/provider/popular
+ * @desc    Fetch all-time popular anime (Cached 1 hr)
+ */
+router.get('/popular', cacheMiddleware(3600), async (req, res) => {
+  try {
+    const response = await axios.get(`${JIKAN_BASE_URL}/top/anime?filter=favorite&limit=12`, { timeout: 4000 });
+    const normalizedList = (response.data.data || []).map(normalizeAnime);
+    return res.status(200).json(normalizedList);
+  } catch (error) {
+    console.warn(`Popular Jikan API failed (${error.message}), trying AniList fallback...`);
+    try {
+      const aniListCatalog = await fetchAniListCatalog('FAVORITES_DESC', 12);
+      return res.status(200).json(aniListCatalog);
+    } catch (fallbackError) {
+      console.error(`Popular fallback error: ${fallbackError.message}`);
+      return res.status(500).json({ error: 'Popular catalog temporarily unavailable', message: fallbackError.message });
+    }
+  }
+});
+
+/**
+ * @route   GET /api/provider/recommendations
+ * @desc    Fetch recommended anime based on an anime ID
+ */
+router.get('/recommendations', cacheMiddleware(1800), async (req, res) => {
+  const { basedOn } = req.query;
+  if (!basedOn) {
+    return res.redirect('/api/provider/trending');
+  }
+  try {
+    const response = await axios.get(`${JIKAN_BASE_URL}/anime/${basedOn}/recommendations`, { timeout: 4000 });
+    let rawData = response.data.data || [];
+    // Jikan recommendations return { entry: { mal_id, title... } }
+    let list = rawData.slice(0, 12).map(r => normalizeAnime(r.entry));
+    return res.status(200).json(list);
+  } catch (error) {
+    console.warn(`Recommendations Jikan API failed for ${basedOn}: ${error.message}`);
+    // Fallback to SCORE_DESC on AniList
+    try {
+      const aniListCatalog = await fetchAniListCatalog('SCORE_DESC', 12);
+      return res.status(200).json(aniListCatalog);
+    } catch (fallbackError) {
+      return res.status(500).json({ error: 'Recommendations unavailable' });
+    }
+  }
+});
+
 const { getWeeklySchedule } = require('../controllers/schedule.controller');
 
 /**
@@ -296,6 +344,14 @@ router.get('/episodes/:animeId', cacheMiddleware(1800), async (req, res) => {
  */
 router.get('/stream/:animeId/:episodeNumber', (req, res) => {
   return getLiveStreamSources(req, res);
+});
+
+/**
+ * @route   GET /api/provider/servers/:animeId/:episodeNumber
+ * @desc    Get all available servers for a specific episode
+ */
+router.get('/servers/:animeId/:episodeNumber', (req, res) => {
+  return getAvailableServers(req, res);
 });
 
 /**

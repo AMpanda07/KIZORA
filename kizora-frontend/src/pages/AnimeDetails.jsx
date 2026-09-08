@@ -100,6 +100,31 @@ export const AnimeDetails = () => {
             <p className="text-lg leading-relaxed text-kz-text/80">{anime.synopsis}</p>
           </div>
 
+          {/* Season Selector */}
+          {anime.seasons && anime.seasons.length > 1 && (
+            <div className="bg-kz-surface p-4 rounded border border-kz-border">
+              <label htmlFor="season-select" className="block text-sm font-medium text-kz-muted mb-2">
+                Related Seasons & Media
+              </label>
+              <select
+                id="season-select"
+                className="w-full bg-kz-bg border border-kz-border rounded px-4 py-2 text-white focus:outline-none focus:border-kz-primary"
+                value={anime.seasons.find(s => s.isCurrent)?._id || anime.id}
+                onChange={(e) => {
+                  if (e.target.value !== anime.id) {
+                    window.location.href = `/anime/${e.target.value}`;
+                  }
+                }}
+              >
+                {anime.seasons.map((season) => (
+                  <option key={season._id} value={season._id}>
+                    {season.title} {season.relation ? `(${season.relation.replace('_', ' ')})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <h2 className="text-2xl font-bold mb-4">Episodes</h2>
             <EpisodeList episodes={episodes} animeId={anime.id} />

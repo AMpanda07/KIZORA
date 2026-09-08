@@ -97,6 +97,37 @@ export const fetchRecent = async () => {
 };
 
 /**
+ * Fetch all-time popular anime
+ */
+export const fetchPopular = async () => {
+  try {
+    const response = await API.get('/provider/popular');
+    if (response.data && response.data.length > 0) {
+      return response.data.map(normalizeAnime);
+    }
+  } catch (err) {
+    console.warn('[API] Popular fetch failed:', err.message);
+  }
+  return [];
+};
+
+/**
+ * Fetch recommendations based on an anime ID
+ */
+export const fetchRecommendations = async (basedOnId) => {
+  try {
+    const params = basedOnId ? { basedOn: basedOnId } : {};
+    const response = await API.get('/provider/recommendations', { params });
+    if (response.data && response.data.length > 0) {
+      return response.data.map(normalizeAnime);
+    }
+  } catch (err) {
+    console.warn('[API] Recommendations fetch failed:', err.message);
+  }
+  return [];
+};
+
+/**
  * Fetch available genres
  */
 export const fetchGenres = async () => {
@@ -181,9 +212,21 @@ export const fetchEpisodes = async (animeId) => {
  * Lazy fetch stream sources for a specific anime ID and episode number.
  * Only resolves the requested episode without fetching all other episodes.
  */
-export const fetchEpisodeStream = async (animeId, episodeNumber, signal) => {
+export const fetchEpisodeStream = async (animeId, episodeNumber, signal, server = null) => {
   const epNum = episodeNumber || 1;
-  const response = await API.get(`/provider/stream/${animeId}/${epNum}`, { signal });
+  const url = server && server !== 'auto' 
+    ? `/provider/stream/${animeId}/${epNum}?server=${server}`
+    : `/provider/stream/${animeId}/${epNum}`;
+  const response = await API.get(url, { signal });
+  return response.data;
+};
+
+/**
+ * Fetch available servers for a specific anime ID and episode number.
+ */
+export const fetchAvailableServers = async (animeId, episodeNumber, signal) => {
+  const epNum = episodeNumber || 1;
+  const response = await API.get(`/provider/servers/${animeId}/${epNum}`, { signal });
   return response.data;
 };
 

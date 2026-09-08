@@ -2,6 +2,8 @@ import {
   fetchTrendingAnime, 
   fetchSpotlight, 
   fetchRecent, 
+  fetchPopular,
+  fetchRecommendations,
   fetchAnimeInfo, 
   fetchEpisodes, 
   fetchSearchResults,
@@ -31,6 +33,16 @@ export const animeService = {
 
   async getTopAiring() {
     const data = await fetchRecent();
+    return data.map(mapAnimeForUI);
+  },
+
+  async getPopular() {
+    const data = await fetchPopular();
+    return data.map(mapAnimeForUI);
+  },
+
+  async getRecommendations(basedOnId = null) {
+    const data = await fetchRecommendations(basedOnId);
     return data.map(mapAnimeForUI);
   },
 

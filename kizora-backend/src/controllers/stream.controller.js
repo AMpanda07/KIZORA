@@ -48,8 +48,10 @@ const getLiveStreamSources = async (req, res) => {
       info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [] };
     }
 
+    const forceProvider = req.query.server || null;
+
     // 2. Resolve Stream sequentially across providers for this episode ONLY
-    const streamResult = await resolveStream(animeId, episodeNum, info);
+    const streamResult = await resolveStream(animeId, episodeNum, info, 'sub', 'default', forceProvider);
 
     if (streamResult && streamResult.success && streamResult.url) {
       return res.status(200).json({
@@ -101,4 +103,43 @@ const invalidateStreamCache = (req, res) => {
   return res.status(200).json({ success: true, message: `Cache invalidated for anime ${animeId} Ep ${episodeNumber}` });
 };
 
-module.exports = { getLiveStreamSources, invalidateStreamCache };
+/**
+ * Controller: getAvailableServers
+ * Runs a lightweight check or diagnostic to return available providers for an episode
+ */
+const getAvailableServers = async (req, res) => {
+  const { animeId, episodeNumber } = req.params;
+  const episodeNum = parseInt(episodeNumber, 10) || 1;
+
+  try {
+    let info = await getAnimeInfoWithFallback(animeId).catch(() => null);
+    if (!info || !info.title) {
+      info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [] };
+    }
+
+    // Use the diagnostic method to see which providers have the episode
+    const diagnostic = await providerManager.runDiagnostic(animeId, episodeNum, info);
+    
+    // Filter to only successful providers
+    const servers = diagnostic.results
+      .filter(d => d.success)
+      .map(d => ({
+        id: d.provider,
+        name: d.provider.charAt(0).toUpperCase() + d.provider.slice(1),
+        available: true,
+        priority: d.priority
+      }));
+
+    return res.status(200).json({
+      success: true,
+      animeId,
+      episodeNumber: episodeNum,
+      servers
+    });
+  } catch (e) {
+    console.error(`[STREAM CONTROLLER] Error fetching servers: ${e.message}`);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+module.exports = { getLiveStreamSources, invalidateStreamCache, getAvailableServers };

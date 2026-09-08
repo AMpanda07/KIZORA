@@ -5,8 +5,8 @@ import { animeService } from '../services/animeService';
 import { VideoPlayer } from '../components/domain/VideoPlayer';
 import { Skeleton } from '../components/common/Skeleton';
 import { ErrorState } from '../components/common/ErrorState';
-import { fetchEpisodeStream } from '../services/api';
-import { useWatchHistory } from '../hooks/useStorage';
+import { fetchEpisodeStream, fetchAvailableServers } from '../services/api';
+import { useWatchHistory, useSettings } from '../hooks/useStorage';
 
 export const Watch = () => {
   const { animeId, episodeId } = useParams();
@@ -15,6 +15,7 @@ export const Watch = () => {
   const [anime, setAnime] = useState(null);
   const [episodes, setEpisodes] = useState([]);
   const [streamData, setStreamData] = useState(null);
+  const [availableServers, setAvailableServers] = useState([]);
   const [activeServerId, setActiveServerId] = useState(null);
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -22,6 +23,7 @@ export const Watch = () => {
   const [error, setError] = useState(null);
 
   const { updateProgress } = useWatchHistory();
+  const { settings, updateSetting } = useSettings();
 
   // 1. Calculate target episode number deterministically from route param
   const currentEpNum = useMemo(() => {
@@ -67,12 +69,25 @@ export const Watch = () => {
         setStreamLoading(true);
         setError(null);
         setStreamData(null);
-        console.log(`[WATCH] Requesting stream for animeId: ${animeId}, epNum: ${currentEpNum}`);
-        const data = await fetchEpisodeStream(animeId, currentEpNum, controller.signal);
+        
+        // Fetch available servers in background (non-blocking)
+        fetchAvailableServers(animeId, currentEpNum, controller.signal)
+          .then(res => {
+            if (res && res.success && res.servers) {
+              setAvailableServers(res.servers);
+            }
+          })
+          .catch(e => console.warn('Could not fetch available servers', e));
+
+        console.log(`[WATCH] Requesting stream for animeId: ${animeId}, epNum: ${currentEpNum}, server: ${settings.preferredProvider}`);
+        const data = await fetchEpisodeStream(animeId, currentEpNum, controller.signal, settings.preferredProvider);
         setStreamData(data);
         setActiveSourceIndex(0);
-        if (data?.servers && data.servers.length > 0) {
-          setActiveServerId(data.servers[0].id || 'default');
+        
+        // If preferred provider failed and it fell back to auto, update the settings
+        if (settings.preferredProvider !== 'auto' && data.provider !== settings.preferredProvider && data.success) {
+          // It fell back to another provider
+          console.warn(`Preferred provider ${settings.preferredProvider} failed. Fell back to ${data.provider}`);
         }
       } catch (err) {
         if (err.name === 'CanceledError' || err.name === 'AbortError') return;
@@ -84,7 +99,7 @@ export const Watch = () => {
     };
     loadStream();
     return () => controller.abort();
-  }, [animeId, currentEpNum]);
+  }, [animeId, currentEpNum, settings.preferredProvider]);
 
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   
@@ -125,13 +140,35 @@ export const Watch = () => {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Top Breadcrumb */}
-      <div className="flex items-center justify-between">
-        <Link to={`/anime/${animeId}`} className="inline-flex items-center text-kz-muted hover:text-kz-primary transition-colors text-sm font-medium">
-          <ArrowLeft size={16} className="mr-2" /> Back to {anime.title}
-        </Link>
-        <span className="text-xs text-kz-muted font-mono">
-          Playing Episode {currentEpNum}
-        </span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center">
+          <Link to={`/anime/${animeId}`} className="inline-flex items-center text-kz-muted hover:text-kz-primary transition-colors text-sm font-medium">
+            <ArrowLeft size={16} className="mr-2" /> Back to {anime.title}
+          </Link>
+        </div>
+        
+        <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
+          {anime.seasons && anime.seasons.length > 1 && (
+            <select
+              className="bg-kz-surface border border-kz-border rounded px-3 py-1 text-xs text-white focus:outline-none focus:border-kz-primary w-48 truncate"
+              value={anime.seasons.find(s => s.isCurrent)?._id || anime.id}
+              onChange={(e) => {
+                if (e.target.value !== anime.id) {
+                  navigate(`/watch/${e.target.value}/1`);
+                }
+              }}
+            >
+              {anime.seasons.map((season) => (
+                <option key={season._id} value={season._id}>
+                  {season.title}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="text-xs text-kz-muted font-mono whitespace-nowrap">
+            Playing Episode {currentEpNum}
+          </span>
+        </div>
       </div>
 
       {/* Main Layout: Video Player (Left) + Episode Grid (Right on Desktop) */}
@@ -200,17 +237,38 @@ export const Watch = () => {
           </div>
 
           {/* Multi-Server Selection Bar */}
-          {streamData && (
-            <div className="p-4 bg-kz-surface rounded-xl border border-kz-border space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-kz-muted flex items-center gap-1.5">
-                  <Server size={14} className="text-kz-primary" /> Available Servers & Qualities
-                </span>
-                <span className="text-xs text-kz-muted">Provider: {streamData.provider || 'KIZORA Engine'}</span>
+          <div className="p-4 bg-kz-surface rounded-xl border border-kz-border space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-kz-muted flex items-center gap-1.5">
+                <Server size={14} className="text-kz-primary" /> Available Servers & Qualities
+              </span>
+              
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-kz-muted font-medium">Server:</span>
+                <select
+                  className="bg-kz-bg border border-kz-border rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-kz-primary w-40"
+                  value={settings.preferredProvider || 'auto'}
+                  onChange={(e) => updateSetting('preferredProvider', e.target.value)}
+                >
+                  <option value="auto">Auto (Recommended)</option>
+                  {availableServers.map(srv => (
+                    <option key={srv.id} value={srv.id}>
+                      {srv.name} {srv.id === streamData?.provider ? '(Active)' : ''}
+                    </option>
+                  ))}
+                  {/* Fallback option if currently playing server isn't in availableServers array yet */}
+                  {streamData?.provider && !availableServers.some(s => s.id === streamData.provider) && (
+                    <option value={streamData.provider} disabled>
+                      {streamData.provider.charAt(0).toUpperCase() + streamData.provider.slice(1)} (Active)
+                    </option>
+                  )}
+                </select>
               </div>
+            </div>
 
-              {/* Quality & Server Buttons */}
-              <div className="flex flex-wrap gap-2">
+            {/* Quality & Source Buttons */}
+            {streamData && sources.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-kz-border/50">
                 {sources.map((srcItem, idx) => (
                   <button
                     key={idx}
@@ -222,12 +280,12 @@ export const Watch = () => {
                     }`}
                   >
                     {activeSourceIndex === idx && <Check size={12} />}
-                    {srcItem.quality || `Server ${idx + 1}`}
+                    {srcItem.quality || `Source ${idx + 1}`}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Right Column: Episode Grid List */}

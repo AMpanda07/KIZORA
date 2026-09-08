@@ -147,6 +147,7 @@ export function useSettings() {
             autoplayNext: true,
             autoPlay: true,
             defaultQuality: 'auto',
+            preferredProvider: 'auto',
             compactCards: false,
             reduceAnimations: false,
           };
@@ -156,6 +157,7 @@ export function useSettings() {
         autoplayNext: true,
         autoPlay: true,
         defaultQuality: 'auto',
+        preferredProvider: 'auto',
         compactCards: false,
         reduceAnimations: false,
       };

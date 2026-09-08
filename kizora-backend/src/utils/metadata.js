@@ -29,6 +29,26 @@ const fetchAniListInfo = async (anilistId) => {
         status
         seasonYear
         averageScore
+        relations {
+          edges {
+            relationType(version: 2)
+            node {
+              id
+              idMal
+              title {
+                romaji
+                english
+                native
+              }
+              type
+              format
+              status
+              coverImage {
+                large
+              }
+            }
+          }
+        }
       }
     }
   `;
@@ -53,6 +73,33 @@ const fetchAniListInfo = async (anilistId) => {
 
 // Normalize AniList data into KIZORA schema
 const normalizeAniListAnime = (media) => {
+  const seasons = [];
+  
+  // Add self
+  seasons.push({
+    _id: media.id.toString(),
+    title: media.title.english || media.title.romaji || 'Untitled Anime',
+    isCurrent: true
+  });
+  
+  if (media.relations && media.relations.edges) {
+    const validRelations = ['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY'];
+    media.relations.edges.forEach(edge => {
+      if (validRelations.includes(edge.relationType) && edge.node.type === 'ANIME') {
+        seasons.push({
+          _id: edge.node.id.toString(),
+          title: edge.node.title.english || edge.node.title.romaji || 'Untitled Anime',
+          isCurrent: false,
+          relation: edge.relationType,
+          status: edge.node.status
+        });
+      }
+    });
+  }
+
+  // Sort seasons simply by id as a rough chronological fallback if needed, or keep as is.
+  // Actually, keeping the order from AniList is usually chronologically logical around the center node.
+
   return {
     _id: media.id.toString(), // anilistId is the primary ID
     anilistId: media.id,
@@ -69,16 +116,16 @@ const normalizeAniListAnime = (media) => {
     releaseYear: media.seasonYear || new Date().getFullYear(),
     score: (media.averageScore / 10) || null,
     type: 'TV',
-    source: 'AniList'
+    source: 'AniList',
+    seasons: seasons
   };
 };
 
-// Try Jikan (MAL) with Retry Logic
 const fetchJikanWithRetry = async (malId, attempt = 1) => {
   const MAX_RETRIES = 1;
   try {
     console.log(`[JIKAN] Attempt ${attempt}/${MAX_RETRIES}: ${malId}`);
-    const response = await axios.get(`https://api.jikan.moe/v4/anime/${malId}`, { 
+    const response = await axios.get(`https://api.jikan.moe/v4/anime/${malId}/full`, { 
       timeout: TIMEOUT,
       headers: {
         'User-Agent': 'curl/8.4.0',
@@ -106,6 +153,35 @@ const fetchJikanWithRetry = async (malId, attempt = 1) => {
 // Normalize Jikan data into KIZORA schema
 const normalizeJikanAnime = (item) => {
   if (!item) return null;
+  
+  // Extract Prequel/Sequel relations as seasons
+  const seasons = [];
+  
+  // Add self
+  seasons.push({
+    _id: item.mal_id.toString(),
+    title: item.title_english || item.title || 'Untitled Anime',
+    isCurrent: true
+  });
+  
+  if (item.relations) {
+    const validRelations = ['Prequel', 'Sequel', 'Parent story', 'Side story'];
+    item.relations.forEach(rel => {
+      if (validRelations.includes(rel.relation)) {
+        rel.entry.forEach(entry => {
+          if (entry.type === 'anime') {
+            seasons.push({
+              _id: entry.mal_id.toString(),
+              title: entry.name,
+              isCurrent: false,
+              relation: rel.relation
+            });
+          }
+        });
+      }
+    });
+  }
+
   return {
     _id: item.mal_id.toString(),
     anilistId: item.mal_id, // We fallback to treating MAL ID as AniList ID for the UI
@@ -123,7 +199,8 @@ const normalizeJikanAnime = (item) => {
     releaseYear: item.year || (item.aired?.from ? new Date(item.aired.from).getFullYear() : new Date().getFullYear()),
     score: item.score || null,
     type: item.type || 'TV',
-    source: 'Jikan (Fallback)'
+    source: 'Jikan (Fallback)',
+    seasons: seasons
   };
 };
 

@@ -148,9 +148,11 @@ class ProviderManager {
    * Provider 1 (Ep N) -> fail -> Provider 2 (Ep N) -> fail -> Provider 3 (Ep N)...
    * Max 5 attempts (1 per provider). Stops on first success. Never cycles back.
    */
-  async resolveStream(animeId, episodeNumber, metadata, language = 'sub', quality = 'default') {
+  async resolveStream(animeId, episodeNumber, metadata, language = 'sub', quality = 'default', forceProvider = null) {
     const epNum = parseInt(episodeNumber, 10) || 1;
-    const streamCacheKey = `stream:${animeId}:${epNum}:${language}:${quality}`;
+    const streamCacheKey = forceProvider 
+      ? `stream:${animeId}:${epNum}:${language}:${quality}:${forceProvider}`
+      : `stream:${animeId}:${epNum}:${language}:${quality}`;
 
     // 1. Check Stream Cache (10 min TTL)
     const cachedStream = this.getFromCache(streamCacheKey);
@@ -162,7 +164,9 @@ class ProviderManager {
     }
 
     // 2. In-flight Promise Deduplication: episode:animeId:epNum:lang:qual
-    const dedupKey = `episode:${animeId}:${epNum}:${language}:${quality}`;
+    const dedupKey = forceProvider
+      ? `episode:${animeId}:${epNum}:${language}:${quality}:${forceProvider}`
+      : `episode:${animeId}:${epNum}:${language}:${quality}`;
 
     return this.deduplicate(dedupKey, async () => {
       // Re-check cache in case another request resolved it while waiting
@@ -172,7 +176,14 @@ class ProviderManager {
       console.log(`[WATCH] Anime: ${animeId} (${metadata.title})`);
       console.log(`[WATCH] Episode: ${epNum}`);
 
-      const providers = this.getSortedProviders();
+      let providers = this.getSortedProviders();
+      if (forceProvider) {
+        providers = providers.filter(p => p.name === forceProvider);
+        if (providers.length === 0) {
+          return { success: false, error: { message: `Provider ${forceProvider} not found` } };
+        }
+      }
+
       const attempted = [];
       let attemptsCount = 0;
       const MAX_PROVIDER_ATTEMPTS = 5;
