@@ -40,7 +40,9 @@ const fetchAniListInfo = async (anilistId) => {
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'User-Agent': USER_AGENT
+      'User-Agent': USER_AGENT,
+      'Origin': 'https://anilist.co',
+      'Referer': 'https://anilist.co/'
     }
   });
   
@@ -211,14 +213,7 @@ const _getAnimeInfoWithFallbackInternal = async (animeId) => {
     console.warn(`[METADATA] AniWixi metadata failed: ${err.message}`);
   }
 
-  // Step 4: Static Catalog Fallback
-  const staticMatch = STATIC_CATALOG.find(c => c._id === `${animeId}` || c.malId === parseInt(animeId, 10));
-  if (staticMatch) {
-    console.log(`[METADATA] Resolved via Static Catalog: ${staticMatch.title}`);
-    return staticMatch;
-  }
-
-  throw new Error(`Could not resolve metadata for anime ${animeId} across any source`);
+  throw new Error(`Could not resolve metadata for anime ID "${animeId}" across any metadata provider.`);
 };
 
 const getAnimeInfoWithFallback = async (animeId) => {

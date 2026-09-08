@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 const WATCHLIST_KEY = 'kizora_watchlist';
 const HISTORY_KEY = 'kizora_watch_history';
@@ -99,23 +99,25 @@ export function useWatchHistory() {
   }) => {
     if (!animeId) return;
     const idStr = String(animeId);
+    const epNum = episodeNumber || 1;
+    const historyKey = `${idStr}:${epNum}`;
     const progressPercent = duration > 0 ? Math.min(100, Math.round((currentTime / duration) * 100)) : 0;
 
     setHistory((prev) => {
-      const filtered = prev.filter((item) => String(item.animeId) !== idStr);
+      const filtered = prev.filter((item) => `${item.animeId}:${item.episodeNumber}` !== historyKey);
       const updatedItem = {
         animeId: idStr,
-        episodeNumber: episodeNumber || 1,
-        episodeId: episodeId || `${idStr}-ep-${episodeNumber || 1}`,
+        episodeNumber: epNum,
+        episodeId: episodeId || `${idStr}-ep-${epNum}`,
         animeTitle: animeTitle || 'Anime',
-        episodeTitle: episodeTitle || `Episode ${episodeNumber || 1}`,
+        episodeTitle: episodeTitle || `Episode ${epNum}`,
         poster: poster || '',
         currentTime: Math.floor(currentTime),
         duration: Math.floor(duration),
         progress: progressPercent,
         updatedAt: Date.now(),
       };
-      return [updatedItem, ...filtered].slice(0, 30); // keep up to 30 recent items
+      return [updatedItem, ...filtered].slice(0, 50); // keep up to 50 recent items
     });
   };
 

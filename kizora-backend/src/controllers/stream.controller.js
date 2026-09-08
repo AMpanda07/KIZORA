@@ -1,5 +1,5 @@
 const { getAnimeInfoWithFallback } = require('../utils/metadata');
-const { resolveStream } = require('../services/provider.service');
+const { resolveStream, providerManager } = require('../services/provider.service');
 
 /**
  * Controller: getLiveStreamSources
@@ -31,8 +31,14 @@ const getLiveStreamSources = async (req, res) => {
     });
   }
 
-  if (!episodeNum || isNaN(episodeNum)) {
-    episodeNum = 1;
+  if (!episodeNum || isNaN(episodeNum) || episodeNum < 1) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_EPISODE_NUMBER',
+        message: `Invalid episode number: ${req.params.episodeNumber}`
+      }
+    });
   }
 
   try {
@@ -42,27 +48,31 @@ const getLiveStreamSources = async (req, res) => {
       info = { title: `Anime ${animeId}`, japaneseTitle: '', synonyms: [] };
     }
 
-    // 2. Resolve Stream sequentially across the 5 providers for this episode ONLY
+    // 2. Resolve Stream sequentially across providers for this episode ONLY
     const streamResult = await resolveStream(animeId, episodeNum, info);
 
     if (streamResult && streamResult.success && streamResult.url) {
       return res.status(200).json({
         success: true,
+        animeId: String(animeId),
+        episodeNumber: episodeNum,
         provider: streamResult.provider,
         url: streamResult.url,
+        type: streamResult.type || (streamResult.url.includes('.m3u8') ? 'hls' : 'iframe'),
         isIframe: streamResult.isIframe !== false,
         sources: streamResult.sources || (streamResult.type === 'hls' ? [{ url: streamResult.url, isM3U8: true }] : []),
         servers: streamResult.servers || []
       });
     }
 
-    // All 5 providers failed: return exact specification schema
+    // All 5 providers failed for this specific episode
     return res.status(404).json({
       success: false,
       error: {
-        code: 'ALL_PROVIDERS_FAILED',
+        code: 'EPISODE_STREAM_UNAVAILABLE',
+        message: `No playable stream available for Episode ${episodeNum} of "${info.title || animeId}".`,
         animeId: String(animeId),
-        episode: episodeNum
+        episodeNumber: episodeNum
       },
       attempted: streamResult?.attemptedProviders || []
     });
@@ -75,10 +85,20 @@ const getLiveStreamSources = async (req, res) => {
         code: 'SERVER_ERROR',
         message: e.message,
         animeId: String(animeId),
-        episode: episodeNum
+        episodeNumber: episodeNum
       }
     });
   }
 };
 
-module.exports = { getLiveStreamSources };
+/**
+ * Controller: invalidateStreamCache
+ * Invalidates cached broken stream for an episode
+ */
+const invalidateStreamCache = (req, res) => {
+  const { animeId, episodeNumber } = req.params;
+  providerManager.invalidateStreamCache(animeId, episodeNumber);
+  return res.status(200).json({ success: true, message: `Cache invalidated for anime ${animeId} Ep ${episodeNumber}` });
+};
+
+module.exports = { getLiveStreamSources, invalidateStreamCache };

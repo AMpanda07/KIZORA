@@ -61,27 +61,32 @@ export const Watch = () => {
 
   // Fetch Stream data whenever target episode number changes
   useEffect(() => {
+    const controller = new AbortController();
     const loadStream = async () => {
       try {
         setStreamLoading(true);
+        setError(null);
+        setStreamData(null);
         console.log(`[WATCH] Requesting stream for animeId: ${animeId}, epNum: ${currentEpNum}`);
-        const data = await fetchEpisodeStream(animeId, currentEpNum);
+        const data = await fetchEpisodeStream(animeId, currentEpNum, controller.signal);
         setStreamData(data);
         setActiveSourceIndex(0);
         if (data?.servers && data.servers.length > 0) {
           setActiveServerId(data.servers[0].id || 'default');
         }
       } catch (err) {
+        if (err.name === 'CanceledError' || err.name === 'AbortError') return;
         console.error('Stream load error:', err);
-        setError(`Unable to load stream for Episode ${currentEpNum}`);
+        setError(`Unable to resolve stream for Episode ${currentEpNum}. The episode may not be available across active providers.`);
       } finally {
         setStreamLoading(false);
       }
     };
     loadStream();
+    return () => controller.abort();
   }, [animeId, currentEpNum]);
 
-  if (error) return <ErrorState message={error} />;
+  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   
   if (loading || !anime) {
     return (

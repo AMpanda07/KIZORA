@@ -17,7 +17,7 @@ const STATIC_CATALOG_FALLBACK = [
 ];
 
 /**
- * Controller: Get Anime Catalog (DB First, API Fallback, Static Emergency Fallback)
+ * Controller: Get Anime Catalog (DB First, API Fallback)
  */
 const getAnimeCatalog = async (req, res) => {
   try {
@@ -59,9 +59,7 @@ const getAnimeCatalog = async (req, res) => {
     return res.status(200).json(catalog);
   } catch (error) {
     console.error(`Error in getAnimeCatalog: ${error.message}`);
-    // Return static fallback instead of 500 — frontend always renders something
-    console.log('⚡ [STATIC FALLBACK] Jikan & MongoDB unavailable, serving static catalog.');
-    return res.status(200).json(STATIC_CATALOG_FALLBACK);
+    return res.status(500).json({ error: 'Catalog temporarily unavailable', message: error.message });
   }
 };
 
@@ -143,7 +141,7 @@ const getAnimeEpisodes = async (req, res) => {
       const apiRes = await axios.get(`${JIKAN_BASE_URL}/anime/${animeId}/episodes`);
       apiEps = apiRes.data?.data || [];
     } catch (e) {
-      console.warn('External episodes API rate-limited or unavailable, generating fallback list.');
+      console.warn('External episodes API rate-limited or unavailable.');
     }
 
     if (apiEps.length === 0) {
@@ -162,9 +160,9 @@ const getAnimeEpisodes = async (req, res) => {
           animeId: animeId,
           episodeNumber: epNum,
           title: ep.title || `Episode ${epNum}`,
-          videoUrl: `http://localhost:5000/api/stream/${animeId}-ep-${epNum}`,
-          thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=800&auto=format&fit=crop',
-          duration: 1440
+          videoUrl: `/api/provider/stream/${animeId}/${epNum}`,
+          thumbnail: null,
+          duration: null
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );

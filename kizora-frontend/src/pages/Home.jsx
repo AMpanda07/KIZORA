@@ -14,28 +14,37 @@ export const Home = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [spot, trend, top] = await Promise.all([
-          animeService.getSpotlight(),
-          animeService.getTrending(),
-          animeService.getTopAiring()
-        ]);
-        setSpotlight(spot || []);
-        setTrending(trend || []);
-        setTopAiring(top || []);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [spot, trend, top] = await Promise.all([
+        animeService.getSpotlight(),
+        animeService.getTrending(),
+        animeService.getTopAiring()
+      ]);
+      const s = spot || [];
+      const t = trend || [];
+      const topA = top || [];
+      if (s.length === 0 && t.length === 0 && topA.length === 0) {
+        setError('Unable to load trending anime.');
+        return;
       }
-    };
+      setSpotlight(s);
+      setTrending(t);
+      setTopAiring(topA);
+    } catch (err) {
+      setError(err.message || 'Unable to load trending anime.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
 
-  if (error) return <ErrorState message={error} />;
+  if (error) return <ErrorState message={error} onRetry={fetchData} />;
 
   const heroAnime = spotlight.length > 0 ? spotlight[0] : trending[0];
 

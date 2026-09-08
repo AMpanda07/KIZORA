@@ -181,7 +181,7 @@ const VideoPlayer = ({
   };
 
   const fmt = (s) => {
-    if (isNaN(s) || s === Infinity) return '00:00';
+    if (isNaN(s) || s === Infinity || !s || s <= 0) return '--:--';
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;

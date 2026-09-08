@@ -93,6 +93,29 @@ class ProviderManager {
   }
 
   /**
+   * Validate stream result from provider adapter
+   */
+  validateStreamSource(stream) {
+    if (!stream || !stream.url || typeof stream.url !== 'string') return false;
+    const url = stream.url.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+    if (url.includes('127.0.0.1') || url.includes('localhost')) return false;
+    // Check for common error pages
+    if (url.endsWith('/404') || url.endsWith('/error')) return false;
+    return true;
+  }
+
+  /**
+   * Invalidate cached stream for an episode (e.g. upon playback error)
+   */
+  invalidateStreamCache(animeId, episodeNumber, language = 'sub', quality = 'default') {
+    const epNum = parseInt(episodeNumber, 10) || 1;
+    const key = `stream:${animeId}:${epNum}:${language}:${quality}`;
+    this.cache.delete(key);
+    console.log(`[CACHE INVALIDATED] ${key}`);
+  }
+
+  /**
    * Resolve Episode List for an anime from canonical metadata (Lazy UI)
    * Does NOT scrape full catalogs across the 5 providers to avoid rate limits
    */
@@ -106,11 +129,11 @@ class ProviderManager {
 
     const normalizedEpisodes = Array.from({ length: total }, (_, i) => ({
       _id: `${animeId}-ep-${i + 1}`,
-      anilistId: animeId,
+      anilistId: metadata.anilistId || animeId,
       providerEpisodeId: `${i + 1}`,
       episodeNumber: i + 1,
       title: `Episode ${i + 1}`,
-      duration: '24:00',
+      duration: null,
       thumbnail: fallbackThumbnail,
       sourceProvider: 'metadata'
     }));
@@ -125,9 +148,9 @@ class ProviderManager {
    * Provider 1 (Ep N) -> fail -> Provider 2 (Ep N) -> fail -> Provider 3 (Ep N)...
    * Max 5 attempts (1 per provider). Stops on first success. Never cycles back.
    */
-  async resolveStream(animeId, episodeNumber, metadata) {
+  async resolveStream(animeId, episodeNumber, metadata, language = 'sub', quality = 'default') {
     const epNum = parseInt(episodeNumber, 10) || 1;
-    const streamCacheKey = `stream:${animeId}:${epNum}`;
+    const streamCacheKey = `stream:${animeId}:${epNum}:${language}:${quality}`;
 
     // 1. Check Stream Cache (10 min TTL)
     const cachedStream = this.getFromCache(streamCacheKey);
@@ -138,15 +161,15 @@ class ProviderManager {
       return cachedStream;
     }
 
-    // 2. In-flight Promise Deduplication: episode:animeId:epNum
-    const dedupKey = `episode:${animeId}:${epNum}`;
+    // 2. In-flight Promise Deduplication: episode:animeId:epNum:lang:qual
+    const dedupKey = `episode:${animeId}:${epNum}:${language}:${quality}`;
 
     return this.deduplicate(dedupKey, async () => {
       // Re-check cache in case another request resolved it while waiting
       const rechecked = this.getFromCache(streamCacheKey);
       if (rechecked) return rechecked;
 
-      console.log(`[WATCH] Anime: ${animeId}`);
+      console.log(`[WATCH] Anime: ${animeId} (${metadata.title})`);
       console.log(`[WATCH] Episode: ${epNum}`);
 
       const providers = this.getSortedProviders();
@@ -158,16 +181,15 @@ class ProviderManager {
         if (attemptsCount >= MAX_PROVIDER_ATTEMPTS) break;
         attemptsCount++;
 
-        console.log(`[${adapter.name}] Episode ${epNum}`);
+        console.log(`[${adapter.name}] Resolving Episode ${epNum}...`);
 
         try {
-          // A. Resolve provider-specific anime ID (from 24-hr cache or search)
+          // A. Resolve provider-specific anime ID
           let providerAnimeId = this.getProviderAnimeId(animeId, adapter.name);
 
           if (!providerAnimeId) {
-            // Specific optimization: AniWixi natively maps to AniList ID
-            if (adapter.name === 'aniwixi' && animeId) {
-              providerAnimeId = animeId;
+            if (adapter.name === 'aniwixi') {
+              providerAnimeId = metadata.anilistId || (await adapter.searchAnime(metadata.title, metadata.japaneseTitle, metadata.synonyms));
             } else {
               providerAnimeId = await adapter.searchAnime(metadata.title, metadata.japaneseTitle, metadata.synonyms);
             }
@@ -188,16 +210,20 @@ class ProviderManager {
             1 // max 1 retry for transient errors
           );
 
-          if (stream && stream.url) {
+          // C. Validate stream URL before accepting
+          if (stream && this.validateStreamSource(stream)) {
             adapter.recordSuccess();
-            console.log(`[STREAM] ${adapter.name} SUCCESS`);
+            console.log(`[STREAM SUCCESS] Provider: ${adapter.name} | Ep: ${epNum}`);
 
             const payload = {
               success: true,
+              animeId: String(animeId),
+              episodeNumber: epNum,
               provider: adapter.name,
               url: stream.url,
+              type: stream.type || (stream.url.includes('.m3u8') ? 'hls' : 'iframe'),
               isIframe: stream.isIframe !== false,
-              sources: stream.sources || [],
+              sources: stream.sources || (stream.url.includes('.m3u8') ? [{ url: stream.url, isM3U8: true }] : []),
               servers: stream.servers || [],
               attemptedProviders: attempted
             };
@@ -206,7 +232,8 @@ class ProviderManager {
             this.setCache(streamCacheKey, payload, 10 * 60 * 1000);
             return payload;
           } else {
-            attempted.push({ provider: adapter.name, status: 'no_stream_returned' });
+            console.warn(`[${adapter.name}] Stream validation failed for Episode ${epNum}`);
+            attempted.push({ provider: adapter.name, status: 'invalid_stream_returned' });
           }
         } catch (err) {
           adapter.recordFailure(err);
@@ -216,11 +243,12 @@ class ProviderManager {
       }
 
       // All 5 providers failed for this episode
-      console.log(`[STREAM] ALL_PROVIDERS_FAILED for anime ${animeId} ep ${epNum}`);
+      console.log(`[STREAM FAILED] All providers failed for anime ${animeId} Ep ${epNum}`);
       return {
         success: false,
         error: {
           code: 'ALL_PROVIDERS_FAILED',
+          message: `Unable to resolve playable stream for Episode ${epNum}.`,
           animeId: String(animeId),
           episode: epNum
         },

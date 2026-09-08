@@ -1,25 +1,26 @@
 const axios = require('axios');
 const BaseAdapter = require('../BaseAdapter');
 
-const BASE_URL = process.env.ANIME_WORLD_INDIA_API_URL || 'http://127.0.0.1:3001/api';
+const BASE_URL = process.env.ANIME_WORLD_INDIA_API_URL || null;
 const TIMEOUT = 8000;
 
 class AnimeWorldIndiaAdapter extends BaseAdapter {
   constructor() {
     super('animeworldindia', 3); // Priority 3
-    this.client = axios.create({
+    this.client = BASE_URL ? axios.create({
       baseURL: BASE_URL,
       timeout: TIMEOUT,
       headers: {
         'Accept': 'application/json',
       }
-    });
+    }) : null;
   }
 
   /**
    * Search Anime
    */
   async searchAnime(title, japaneseTitle, synonyms = []) {
+    if (!this.client) return null;
     try {
       const queries = [title, japaneseTitle, ...(synonyms || [])].filter(Boolean);
       for (const query of queries) {
@@ -42,7 +43,7 @@ class AnimeWorldIndiaAdapter extends BaseAdapter {
    * Get Anime Info
    */
   async getAnimeInfo(providerAnimeId, canonicalId) {
-    if (!providerAnimeId) return null;
+    if (!this.client || !providerAnimeId) return null;
     try {
       const res = await this.client.get(`/info/${providerAnimeId}`);
       if (res.data && res.data.success && res.data.data) {
@@ -67,7 +68,7 @@ class AnimeWorldIndiaAdapter extends BaseAdapter {
    * Get Episodes
    */
   async getEpisodes(providerAnimeId, canonicalId) {
-    if (!providerAnimeId) return [];
+    if (!this.client || !providerAnimeId) return [];
     try {
       const res = await this.client.get(`/episodes/${providerAnimeId}/1`);
       if (res.data && res.data.success && Array.isArray(res.data.data)) {
@@ -90,6 +91,7 @@ class AnimeWorldIndiaAdapter extends BaseAdapter {
    * Get Stream
    */
   async getStream(providerAnimeId, episodeNumber, providerEpisodeId) {
+    if (!this.client) return null;
     const id = providerEpisodeId || `${providerAnimeId}-ep-${episodeNumber}`;
     if (!id) return null;
 
@@ -115,6 +117,15 @@ class AnimeWorldIndiaAdapter extends BaseAdapter {
   }
 
   async healthCheck() {
+    if (!this.client) {
+      return {
+        name: this.name,
+        priority: this.priority,
+        status: 'disabled',
+        note: 'ANIME_WORLD_INDIA_API_URL is unconfigured',
+        failureCount: 0
+      };
+    }
     try {
       const res = await this.client.get('/health');
       const healthy = res.status === 200 && res.data?.data?.status === 'healthy';
